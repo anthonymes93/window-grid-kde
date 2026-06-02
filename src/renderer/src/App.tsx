@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ActiveWindow, VirtualDesktop } from './types';
+import type { ActiveWindow, Activity, VirtualDesktop } from './types';
 
 console.log('window.kde', window.kde);
 
-const activities = ['Work', 'Business', 'Personal', 'TV'];
-
 type Selection = {
-  activity: string;
+  activity: Activity;
   desktop: VirtualDesktop;
 };
 
@@ -16,8 +14,11 @@ const wait = (milliseconds: number): Promise<void> =>
   });
 
 export function App(): JSX.Element {
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [desktops, setDesktops] = useState<VirtualDesktop[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [isLoadingActivities, setIsLoadingActivities] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
   const [isLoadingDesktops, setIsLoadingDesktops] = useState(false);
   const [desktopError, setDesktopError] = useState<string | null>(null);
   const [activeWindow, setActiveWindow] = useState<ActiveWindow | null>(null);
@@ -27,8 +28,36 @@ export function App(): JSX.Element {
   const [activeWindowRefreshTime, setActiveWindowRefreshTime] = useState<string>('Never');
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>([
-    'UI shell initialized with mock Activities.'
+    'UI shell initialized.'
   ]);
+
+  const loadActivities = useCallback(async (): Promise<void> => {
+    setIsLoadingActivities(true);
+    setActivityError(null);
+
+    try {
+      const nextActivities = await window.kde.getActivities();
+      setActivities(nextActivities);
+      setSelection((current) => {
+        if (!current) {
+          return current;
+        }
+
+        const refreshedActivity = nextActivities.find(
+          (activity) => activity.id === current.activity.id
+        );
+
+        return refreshedActivity ? { ...current, activity: refreshedActivity } : null;
+      });
+      setEventLog((current) => [`Loaded ${nextActivities.length} activities`, ...current]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown KDE activity error.';
+      setActivityError(message);
+      setEventLog((current) => [`Failed to load KDE activities: ${message}`, ...current]);
+    } finally {
+      setIsLoadingActivities(false);
+    }
+  }, []);
 
   const loadActiveWindow = useCallback(async (): Promise<void> => {
     setIsLoadingActiveWindow(true);
@@ -100,8 +129,9 @@ export function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    void loadActivities();
     void loadVirtualDesktops();
-  }, [loadVirtualDesktops]);
+  }, [loadActivities, loadVirtualDesktops]);
 
   useEffect(() => {
     const unsubscribe = window.kde.onSelectedWindowFromKwin((nextSelectedWindow) => {
@@ -124,13 +154,13 @@ export function App(): JSX.Element {
       return 'No target selected';
     }
 
-    return `${selection.activity} / ${selection.desktop.name}`;
+    return `${selection.activity.name} / ${selection.desktop.name}`;
   }, [selection]);
 
-  const handleCellClick = (activity: string, desktop: VirtualDesktop): void => {
+  const handleCellClick = (activity: Activity, desktop: VirtualDesktop): void => {
     setSelection({ activity, desktop });
     setEventLog((current) => [
-      `Selected ${activity} → ${desktop.name}`,
+      `Selected ${activity.name} → ${desktop.name}`,
       ...current
     ]);
   };
@@ -141,19 +171,26 @@ export function App(): JSX.Element {
     }
 
     const storedWindow = activeWindow;
+    const selectedActivity = selection.activity;
     const selectedDesktop = selection.desktop;
 
     setIsMovingWindow(true);
     setEventLog((current) => [
       `Moving stored window ID ${storedWindow.id}`,
+      `Selected activity ID ${selectedActivity.id}`,
+      `Selected activity name ${selectedActivity.name}`,
       `Selected desktop ID ${selectedDesktop.id}`,
       `Selected desktop name ${selectedDesktop.name}`,
-      `Moving window "${storedWindow.title}" to Desktop ${selectedDesktop.index + 1}`,
+      `Moving window "${storedWindow.title}" to ${selectedActivity.name} / ${selectedDesktop.name}`,
       ...current
     ]);
 
     try {
-      await window.kde.moveWindowToDesktop(storedWindow.id, selectedDesktop.id);
+      await window.kde.moveWindowToActivityAndDesktop(
+        storedWindow.id,
+        selectedActivity.id,
+        selectedDesktop.id
+      );
       setEventLog((current) => ['Move completed', ...current]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown move error.';
@@ -173,7 +210,7 @@ export function App(): JSX.Element {
       <header className="app-header">
         <div>
           <h1>Window Grid KDE</h1>
-          <p>Phase 2 UI shell with real KDE virtual desktop detection.</p>
+          <p>KDE window routing by Activity and Virtual Desktop.</p>
         </div>
       </header>
 
@@ -225,9 +262,11 @@ export function App(): JSX.Element {
             <div className="panel-heading">
               <h2>Activities</h2>
             </div>
+            {isLoadingActivities && <p className="panel-status">Loading KDE activities...</p>}
+            {activityError && <p className="panel-error">{activityError}</p>}
             <div className="activity-list">
               {activities.map((activity) => (
-                <span key={activity}>{activity}</span>
+                <span key={activity.id} title={activity.id}>{activity.name}</span>
               ))}
             </div>
           </section>
@@ -261,7 +300,7 @@ export function App(): JSX.Element {
             <div className="panel-heading">
               <h2>Activity/Desktop Grid</h2>
               <div className="grid-actions">
-                <span>{activities.length} activities x {desktops.length} desktops</span>
+              <span>{activities.length} activities x {desktops.length} desktops</span>
                 <button
                   className="refresh-button"
                   type="button"
@@ -274,9 +313,11 @@ export function App(): JSX.Element {
             </div>
 
             <div className="grid-scroll" role="region" aria-label="Activity and desktop grid">
-              {desktops.length === 0 && !isLoadingDesktops ? (
+              {(activities.length === 0 || desktops.length === 0) && !isLoadingDesktops && !isLoadingActivities ? (
                 <div className="empty-grid">
-                  {desktopError ? 'Desktop data unavailable.' : 'No KDE virtual desktops found.'}
+                  {desktopError || activityError
+                    ? 'KDE grid data unavailable.'
+                    : 'No KDE activities or virtual desktops found.'}
                 </div>
               ) : (
               <div
@@ -291,20 +332,20 @@ export function App(): JSX.Element {
                 ))}
 
                 {activities.map((activity) => (
-                  <div className="grid-row-fragment" key={activity}>
-                    <div className="activity-header">{activity}</div>
+                  <div className="grid-row-fragment" key={activity.id}>
+                    <div className="activity-header" title={activity.id}>{activity.name}</div>
                     {desktops.map((desktop) => {
                       const isSelected =
-                        selection?.activity === activity && selection.desktop.id === desktop.id;
+                        selection?.activity.id === activity.id && selection.desktop.id === desktop.id;
 
                       return (
                         <button
                           className={isSelected ? 'grid-cell selected' : 'grid-cell'}
-                          key={`${activity}-${desktop.id}`}
+                          key={`${activity.id}-${desktop.id}`}
                           type="button"
                           onClick={() => handleCellClick(activity, desktop)}
                           aria-pressed={isSelected}
-                          aria-label={`${activity}, ${desktop.name}`}
+                          aria-label={`${activity.name}, ${desktop.name}`}
                         >
                           <span>{desktop.index + 1}</span>
                         </button>

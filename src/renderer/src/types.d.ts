@@ -4,6 +4,12 @@ export type VirtualDesktop = {
   index: number;
 };
 
+export type Activity = {
+  id: string;
+  name: string;
+  index: number;
+};
+
 export type ActiveWindow = {
   id: string;
   title: string;
@@ -15,8 +21,14 @@ declare global {
   interface Window {
     kde: {
       getVirtualDesktops: () => Promise<VirtualDesktop[]>;
+      getActivities: () => Promise<Activity[]>;
       getActiveWindow: () => Promise<ActiveWindow>;
       moveWindowToDesktop: (windowId: string, desktopId: string) => Promise<void>;
+      moveWindowToActivityAndDesktop: (
+        windowId: string,
+        activityId: string,
+        desktopId: string
+      ) => Promise<void>;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };
   }

@@ -46,7 +46,7 @@ const notifyMoveWaiters = () => {
 
     clearTimeout(waiter.timeoutId);
     console.log('[Window Grid DBus Helper] Delivering move request to KWin:', moveRequest);
-    waiter.resolve([moveRequest.windowId, moveRequest.desktopId]);
+    waiter.resolve([moveRequest.windowId, moveRequest.activityId ?? '', moveRequest.desktopId]);
   }
 };
 
@@ -81,11 +81,22 @@ class WindowGridKDEInterface extends Interface {
     notifyMoveWaiters();
   }
 
+  MoveWindowToActivityAndDesktop(windowId, activityId, desktopId) {
+    console.log('[Window Grid DBus Helper] MoveWindowToActivityAndDesktop called:', {
+      windowId,
+      activityId,
+      desktopId
+    });
+
+    pendingMoveRequests.push({ windowId, activityId, desktopId });
+    notifyMoveWaiters();
+  }
+
   WaitForMoveRequest() {
     if (pendingMoveRequests.length > 0) {
       const moveRequest = pendingMoveRequests.shift();
       console.log('[Window Grid DBus Helper] KWin immediately took move request:', moveRequest);
-      return [moveRequest.windowId, moveRequest.desktopId];
+      return [moveRequest.windowId, moveRequest.activityId ?? '', moveRequest.desktopId];
     }
 
     console.log('[Window Grid DBus Helper] KWin waiting for next move request.');
@@ -104,7 +115,7 @@ class WindowGridKDEInterface extends Interface {
         }
 
         console.log('[Window Grid DBus Helper] KWin move wait timed out; returning empty request.');
-        resolve(['', '']);
+        resolve(['', '', '']);
       }, MOVE_WAIT_TIMEOUT_MS);
 
       pendingMoveWaiters.push(waiter);
@@ -134,7 +145,18 @@ const moveWindowDescriptor = method({ inSignature: 'ss', outSignature: '' })({
 
 moveWindowDescriptor.finisher(WindowGridKDEInterface);
 
-const waitForMoveDescriptor = method({ inSignature: '', outSignature: 'ss' })({
+const moveWindowActivityDesktopDescriptor = method({ inSignature: 'sss', outSignature: '' })({
+  kind: 'method',
+  key: 'MoveWindowToActivityAndDesktop',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'MoveWindowToActivityAndDesktop'
+  )
+});
+
+moveWindowActivityDesktopDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForMoveDescriptor = method({ inSignature: '', outSignature: 'sss' })({
   kind: 'method',
   key: 'WaitForMoveRequest',
   descriptor: Object.getOwnPropertyDescriptor(
@@ -177,7 +199,8 @@ try {
     methods: [
       'SelectWindow(string windowId, string caption, string resourceClass, string desktopIdsCsv)',
       'MoveWindowToDesktop(string windowId, string desktopId)',
-      'WaitForMoveRequest() -> (string windowId, string desktopId)'
+      'MoveWindowToActivityAndDesktop(string windowId, string activityId, string desktopId)',
+      'WaitForMoveRequest() -> (string windowId, string activityId, string desktopId)'
     ]
   });
 } catch (error) {

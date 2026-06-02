@@ -15,6 +15,12 @@ type VirtualDesktop = {
   index: number;
 };
 
+type Activity = {
+  id: string;
+  name: string;
+  index: number;
+};
+
 type ActiveWindow = {
   id: string;
   title: string;
@@ -251,6 +257,25 @@ const parseVirtualDesktops = (output: string): VirtualDesktop[] => {
   return desktops;
 };
 
+const parseActivities = (output: string): Activity[] => {
+  const activityPattern = /\[Argument: \(ssssi\)\s+"([^"]+)",\s+"((?:\\"|[^"])*)",\s+"(?:\\"|[^"])*",\s+"(?:\\"|[^"])*",\s+\d+\]/g;
+  const activities: Activity[] = [];
+
+  for (const match of output.matchAll(activityPattern)) {
+    activities.push({
+      id: match[1],
+      name: match[2].replace(/\\"/g, '"'),
+      index: activities.length
+    });
+  }
+
+  if (activities.length === 0 && output.trim().length > 0) {
+    throw new Error('Unable to parse KDE activity data.');
+  }
+
+  return activities;
+};
+
 const parseVariantMapValue = (output: string, key: string): string | null => {
   const pattern = new RegExp(
     `\\[Argument: \\{sv\\}\\s+"${key}",\\s+\\[Variant\\([^)]*\\):\\s+"((?:\\\\"|[^"])*)"\\]\\]`
@@ -282,6 +307,21 @@ const getVirtualDesktops = async (): Promise<VirtualDesktop[]> => {
   console.log('qdbus6 virtual desktops parsed:', desktops);
 
   return desktops;
+};
+
+const getActivities = async (): Promise<Activity[]> => {
+  const output = await runCommand('qdbus6', [
+    '--literal',
+    'org.kde.ActivityManager',
+    '/ActivityManager/Activities',
+    'ListActivitiesWithInformation'
+  ]);
+  const activities = parseActivities(output);
+
+  console.log('qdbus6 activities raw output:', output);
+  console.log('qdbus6 activities parsed:', activities);
+
+  return activities;
 };
 
 const getWindowInfoFromKWin = async (windowId: string): Promise<ActiveWindow | null> => {
@@ -399,7 +439,45 @@ const moveWindowToDesktop = async (
   ]);
 };
 
+const moveWindowToActivityAndDesktop = async (
+  windowId: string,
+  activityId: string,
+  desktopId: string
+): Promise<void> => {
+  if (windowId.trim().length === 0) {
+    throw new Error(`Invalid window id: ${windowId}`);
+  }
+
+  if (activityId.trim().length === 0) {
+    throw new Error(`Invalid activity id: ${activityId}`);
+  }
+
+  if (desktopId.trim().length === 0) {
+    throw new Error(`Invalid desktop id: ${desktopId}`);
+  }
+
+  console.log('Requesting KWin DBus helper activity+desktop move:', {
+    service: 'com.anthony.WindowGridKDE',
+    path: '/WindowGridKDE',
+    interface: 'com.anthony.WindowGridKDE',
+    method: 'MoveWindowToActivityAndDesktop',
+    windowId,
+    activityId,
+    desktopId
+  });
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.MoveWindowToActivityAndDesktop',
+    windowId,
+    activityId,
+    desktopId
+  ]);
+};
+
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
+ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getActiveWindow', async () => getActiveWindow());
 ipcMain.handle(
   'kde:moveWindowToDesktop',
@@ -407,6 +485,17 @@ ipcMain.handle(
     console.log('IPC kde:moveWindowToDesktop received stored window id:', windowId);
     console.log('IPC kde:moveWindowToDesktop received selected desktop id:', desktopId);
     return moveWindowToDesktop(windowId, desktopId);
+  }
+);
+ipcMain.handle(
+  'kde:moveWindowToActivityAndDesktop',
+  async (_event, windowId: string, activityId: string, desktopId: string) => {
+    console.log('IPC kde:moveWindowToActivityAndDesktop received:', {
+      windowId,
+      activityId,
+      desktopId
+    });
+    return moveWindowToActivityAndDesktop(windowId, activityId, desktopId);
   }
 );
 
