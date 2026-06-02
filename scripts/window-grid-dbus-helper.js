@@ -12,6 +12,7 @@ const MOVE_WAIT_TIMEOUT_MS = 60_000;
 
 const pendingMoveRequests = [];
 const pendingMoveWaiters = [];
+let requestIdCounter = 0;
 
 const toDesktopIds = (desktopIdsCsv) =>
   desktopIdsCsv
@@ -41,12 +42,22 @@ const postSelectedWindow = async (payload) => {
 
 const notifyMoveWaiters = () => {
   while (pendingMoveRequests.length > 0 && pendingMoveWaiters.length > 0) {
+    const queueLengthBefore = pendingMoveRequests.length;
     const moveRequest = pendingMoveRequests.shift();
     const waiter = pendingMoveWaiters.shift();
+    const queueLengthAfter = pendingMoveRequests.length;
 
     clearTimeout(waiter.timeoutId);
-    console.log('[Window Grid DBus Helper] Delivering move request to KWin:', moveRequest);
-    waiter.resolve([moveRequest.windowId, moveRequest.activityId ?? '', moveRequest.desktopId]);
+    console.log(
+      `[Window Grid DBus Helper] Delivering move request to KWin (queue before=${queueLengthBefore}, after=${queueLengthAfter}):`,
+      moveRequest
+    );
+    waiter.resolve([
+      moveRequest.windowId,
+      moveRequest.activityId ?? '',
+      moveRequest.desktopId,
+      moveRequest.requestId
+    ]);
   }
 };
 
@@ -72,34 +83,46 @@ class WindowGridKDEInterface extends Interface {
   }
 
   MoveWindowToDesktop(windowId, desktopId) {
+    const requestId = String(++requestIdCounter);
     console.log('[Window Grid DBus Helper] MoveWindowToDesktop called:', {
+      requestId,
       windowId,
-      desktopId
+      desktopId,
+      queueLengthBefore: pendingMoveRequests.length
     });
 
-    pendingMoveRequests.push({ windowId, desktopId });
+    pendingMoveRequests.push({ windowId, desktopId, requestId });
+    console.log('[Window Grid DBus Helper] Queue length after push:', pendingMoveRequests.length);
     notifyMoveWaiters();
   }
 
   MoveWindowToActivityAndDesktop(windowId, activityId, desktopId) {
+    const requestId = String(++requestIdCounter);
     console.log('[Window Grid DBus Helper] MoveWindowToActivityAndDesktop called:', {
+      requestId,
       windowId,
       activityId,
-      desktopId
+      desktopId,
+      queueLengthBefore: pendingMoveRequests.length
     });
 
-    pendingMoveRequests.push({ windowId, activityId, desktopId });
+    pendingMoveRequests.push({ windowId, activityId, desktopId, requestId });
+    console.log('[Window Grid DBus Helper] Queue length after push:', pendingMoveRequests.length);
     notifyMoveWaiters();
   }
 
   WaitForMoveRequest() {
     if (pendingMoveRequests.length > 0) {
+      const queueLengthBefore = pendingMoveRequests.length;
       const moveRequest = pendingMoveRequests.shift();
-      console.log('[Window Grid DBus Helper] KWin immediately took move request:', moveRequest);
-      return [moveRequest.windowId, moveRequest.activityId ?? '', moveRequest.desktopId];
+      console.log(
+        `[Window Grid DBus Helper] KWin immediately took move request (queue before=${queueLengthBefore}, after=${pendingMoveRequests.length}):`,
+        moveRequest
+      );
+      return [moveRequest.windowId, moveRequest.activityId ?? '', moveRequest.desktopId, moveRequest.requestId];
     }
 
-    console.log('[Window Grid DBus Helper] KWin waiting for next move request.');
+    console.log('[Window Grid DBus Helper] KWin waiting for next move request. Queue length:', pendingMoveRequests.length);
 
     return new Promise((resolve) => {
       const waiter = {
@@ -115,7 +138,7 @@ class WindowGridKDEInterface extends Interface {
         }
 
         console.log('[Window Grid DBus Helper] KWin move wait timed out; returning empty request.');
-        resolve(['', '', '']);
+        resolve(['', '', '', '']);
       }, MOVE_WAIT_TIMEOUT_MS);
 
       pendingMoveWaiters.push(waiter);
@@ -156,7 +179,7 @@ const moveWindowActivityDesktopDescriptor = method({ inSignature: 'sss', outSign
 
 moveWindowActivityDesktopDescriptor.finisher(WindowGridKDEInterface);
 
-const waitForMoveDescriptor = method({ inSignature: '', outSignature: 'sss' })({
+const waitForMoveDescriptor = method({ inSignature: '', outSignature: 'ssss' })({
   kind: 'method',
   key: 'WaitForMoveRequest',
   descriptor: Object.getOwnPropertyDescriptor(

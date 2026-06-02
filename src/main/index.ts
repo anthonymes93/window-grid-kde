@@ -320,8 +320,41 @@ const getActivities = async (): Promise<Activity[]> => {
 
   console.log('qdbus6 activities raw output:', output);
   console.log('qdbus6 activities parsed:', activities);
+  console.log('Activity id -> name mapping:');
+  for (const activity of activities) {
+    console.log(`  ${activity.id} -> "${activity.name}"`);
+  }
 
   return activities;
+};
+
+const getCurrentActivity = async (): Promise<string> => {
+  const output = await runCommand('qdbus6', [
+    'org.kde.ActivityManager',
+    '/ActivityManager/Activities',
+    'CurrentActivity'
+  ]);
+
+  console.log('qdbus6 CurrentActivity output:', output);
+
+  return output;
+};
+
+const switchToActivity = async (activityId: string): Promise<void> => {
+  if (activityId.trim().length === 0) {
+    throw new Error(`Invalid activity id: ${activityId}`);
+  }
+
+  console.log('Switching to activity:', activityId);
+
+  await runCommand('qdbus6', [
+    'org.kde.ActivityManager',
+    '/ActivityManager/Activities',
+    'SetCurrentActivity',
+    activityId
+  ]);
+
+  console.log('Switched to activity:', activityId);
 };
 
 const getWindowInfoFromKWin = async (windowId: string): Promise<ActiveWindow | null> => {
@@ -478,7 +511,12 @@ const moveWindowToActivityAndDesktop = async (
 
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
+ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());
 ipcMain.handle('kde:getActiveWindow', async () => getActiveWindow());
+ipcMain.handle('kde:switchToActivity', async (_event, activityId: string) => {
+  console.log('IPC kde:switchToActivity received activityId:', activityId);
+  return switchToActivity(activityId);
+});
 ipcMain.handle(
   'kde:moveWindowToDesktop',
   async (_event, windowId: string, desktopId: string) => {
