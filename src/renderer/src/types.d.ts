@@ -16,7 +16,7 @@ declare global {
     kde: {
       getVirtualDesktops: () => Promise<VirtualDesktop[]>;
       getActiveWindow: () => Promise<ActiveWindow>;
-      moveWindowToDesktop: (windowId: string, desktopIndex: number) => Promise<void>;
+      moveWindowToDesktop: (windowId: string, desktopId: string) => Promise<void>;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };
   }

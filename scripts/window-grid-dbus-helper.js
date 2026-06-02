@@ -8,6 +8,10 @@ const { Interface, method } = dbus.interface;
 const SERVICE_NAME = 'com.anthony.WindowGridKDE';
 const OBJECT_PATH = '/WindowGridKDE';
 const ELECTRON_ENDPOINT = 'http://127.0.0.1:48745/kwin/window';
+const MOVE_WAIT_TIMEOUT_MS = 60_000;
+
+const pendingMoveRequests = [];
+const pendingMoveWaiters = [];
 
 const toDesktopIds = (desktopIdsCsv) =>
   desktopIdsCsv
@@ -35,6 +39,17 @@ const postSelectedWindow = async (payload) => {
   console.log('[Window Grid DBus Helper] Electron response:', responseText);
 };
 
+const notifyMoveWaiters = () => {
+  while (pendingMoveRequests.length > 0 && pendingMoveWaiters.length > 0) {
+    const moveRequest = pendingMoveRequests.shift();
+    const waiter = pendingMoveWaiters.shift();
+
+    clearTimeout(waiter.timeoutId);
+    console.log('[Window Grid DBus Helper] Delivering move request to KWin:', moveRequest);
+    waiter.resolve([moveRequest.windowId, moveRequest.desktopId]);
+  }
+};
+
 class WindowGridKDEInterface extends Interface {
   constructor() {
     super(SERVICE_NAME);
@@ -55,6 +70,46 @@ class WindowGridKDEInterface extends Interface {
       desktopIds: toDesktopIds(desktopIdsCsv)
     });
   }
+
+  MoveWindowToDesktop(windowId, desktopId) {
+    console.log('[Window Grid DBus Helper] MoveWindowToDesktop called:', {
+      windowId,
+      desktopId
+    });
+
+    pendingMoveRequests.push({ windowId, desktopId });
+    notifyMoveWaiters();
+  }
+
+  WaitForMoveRequest() {
+    if (pendingMoveRequests.length > 0) {
+      const moveRequest = pendingMoveRequests.shift();
+      console.log('[Window Grid DBus Helper] KWin immediately took move request:', moveRequest);
+      return [moveRequest.windowId, moveRequest.desktopId];
+    }
+
+    console.log('[Window Grid DBus Helper] KWin waiting for next move request.');
+
+    return new Promise((resolve) => {
+      const waiter = {
+        resolve,
+        timeoutId: null
+      };
+
+      waiter.timeoutId = setTimeout(() => {
+        const waiterIndex = pendingMoveWaiters.indexOf(waiter);
+
+        if (waiterIndex >= 0) {
+          pendingMoveWaiters.splice(waiterIndex, 1);
+        }
+
+        console.log('[Window Grid DBus Helper] KWin move wait timed out; returning empty request.');
+        resolve(['', '']);
+      }, MOVE_WAIT_TIMEOUT_MS);
+
+      pendingMoveWaiters.push(waiter);
+    });
+  }
 }
 
 const selectWindowDescriptor = method({ inSignature: 'ssss', outSignature: '' })({
@@ -67,6 +122,28 @@ const selectWindowDescriptor = method({ inSignature: 'ssss', outSignature: '' })
 });
 
 selectWindowDescriptor.finisher(WindowGridKDEInterface);
+
+const moveWindowDescriptor = method({ inSignature: 'ss', outSignature: '' })({
+  kind: 'method',
+  key: 'MoveWindowToDesktop',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'MoveWindowToDesktop'
+  )
+});
+
+moveWindowDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForMoveDescriptor = method({ inSignature: '', outSignature: 'ss' })({
+  kind: 'method',
+  key: 'WaitForMoveRequest',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'WaitForMoveRequest'
+  )
+});
+
+waitForMoveDescriptor.finisher(WindowGridKDEInterface);
 
 const bus = dbus.sessionBus();
 const serviceInterface = new WindowGridKDEInterface();
@@ -97,7 +174,11 @@ try {
   console.log('[Window Grid DBus Helper] Listening:', {
     serviceName: SERVICE_NAME,
     objectPath: OBJECT_PATH,
-    method: 'SelectWindow(string windowId, string caption, string resourceClass, string desktopIdsCsv)'
+    methods: [
+      'SelectWindow(string windowId, string caption, string resourceClass, string desktopIdsCsv)',
+      'MoveWindowToDesktop(string windowId, string desktopId)',
+      'WaitForMoveRequest() -> (string windowId, string desktopId)'
+    ]
   });
 } catch (error) {
   console.error('[Window Grid DBus Helper] Failed to start:', error);

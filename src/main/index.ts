@@ -370,25 +370,32 @@ const getActiveWindow = async (): Promise<ActiveWindow> => {
 
 const moveWindowToDesktop = async (
   windowId: string,
-  desktopIndex: number
+  desktopId: string
 ): Promise<void> => {
-  if (!/^\d+$/.test(windowId)) {
+  if (windowId.trim().length === 0) {
     throw new Error(`Invalid window id: ${windowId}`);
   }
 
-  if (!Number.isInteger(desktopIndex) || desktopIndex < 0) {
-    throw new Error(`Invalid desktop index: ${desktopIndex}`);
+  if (desktopId.trim().length === 0) {
+    throw new Error(`Invalid desktop id: ${desktopId}`);
   }
 
-  console.log('Moving window with xdotool:', {
-    command: 'xdotool',
-    args: ['set_desktop_for_window', windowId, String(desktopIndex)]
-  });
-
-  await runCommand('xdotool', [
-    'set_desktop_for_window',
+  console.log('Requesting KWin DBus helper move:', {
+    service: 'com.anthony.WindowGridKDE',
+    path: '/WindowGridKDE',
+    interface: 'com.anthony.WindowGridKDE',
+    method: 'MoveWindowToDesktop',
     windowId,
-    String(desktopIndex)
+    desktopId
+  });
+  console.log('Selected window id from Electron:', windowId);
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.MoveWindowToDesktop',
+    windowId,
+    desktopId
   ]);
 };
 
@@ -396,9 +403,10 @@ ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActiveWindow', async () => getActiveWindow());
 ipcMain.handle(
   'kde:moveWindowToDesktop',
-  async (_event, windowId: string, desktopIndex: number) => {
+  async (_event, windowId: string, desktopId: string) => {
     console.log('IPC kde:moveWindowToDesktop received stored window id:', windowId);
-    return moveWindowToDesktop(windowId, desktopIndex);
+    console.log('IPC kde:moveWindowToDesktop received selected desktop id:', desktopId);
+    return moveWindowToDesktop(windowId, desktopId);
   }
 );
 

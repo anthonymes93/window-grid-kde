@@ -146,12 +146,14 @@ export function App(): JSX.Element {
     setIsMovingWindow(true);
     setEventLog((current) => [
       `Moving stored window ID ${storedWindow.id}`,
+      `Selected desktop ID ${selectedDesktop.id}`,
+      `Selected desktop name ${selectedDesktop.name}`,
       `Moving window "${storedWindow.title}" to Desktop ${selectedDesktop.index + 1}`,
       ...current
     ]);
 
     try {
-      await window.kde.moveWindowToDesktop(storedWindow.id, selectedDesktop.index);
+      await window.kde.moveWindowToDesktop(storedWindow.id, selectedDesktop.id);
       setEventLog((current) => ['Move completed', ...current]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown move error.';
