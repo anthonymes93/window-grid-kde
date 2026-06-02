@@ -1,0 +1,454 @@
+import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { promisify } from 'node:util';
+
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, ipcMain } = require('electron') as typeof import('electron');
+const execFileAsync = promisify(execFile);
+const PROTOCOL = 'window-grid-kde';
+
+type VirtualDesktop = {
+  id: string;
+  name: string;
+  index: number;
+};
+
+type ActiveWindow = {
+  id: string;
+  title: string;
+  windowClass: string | null;
+  desktopIds?: string[];
+};
+
+type KwinWindowPayload = {
+  windowId: string;
+  caption: string;
+  resourceClass: string | null;
+  desktopIds: string[];
+};
+
+const unavailableActiveWindow: ActiveWindow = {
+  id: 'unavailable',
+  title: 'No active window detected',
+  windowClass: null
+};
+
+let selectedWindow: ActiveWindow | null = null;
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
+const runCommand = async (command: string, args: string[]): Promise<string> => {
+  const { stdout } = await execFileAsync(command, args, {
+    timeout: 5000,
+    maxBuffer: 1024 * 1024
+  });
+
+  return stdout.trim();
+};
+
+const sendJson = (
+  response: ServerResponse,
+  statusCode: number,
+  payload: Record<string, unknown>
+): void => {
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store'
+  });
+  response.end(JSON.stringify(payload));
+};
+
+const readRequestBody = async (request: IncomingMessage): Promise<string> =>
+  new Promise((resolve, reject) => {
+    let body = '';
+
+    request.setEncoding('utf8');
+    request.on('data', (chunk: string) => {
+      body += chunk;
+
+      if (body.length > 64 * 1024) {
+        reject(new Error('Request body too large.'));
+        request.destroy();
+      }
+    });
+    request.on('end', () => resolve(body));
+    request.on('error', reject);
+  });
+
+const isKwinWindowPayload = (value: unknown): value is KwinWindowPayload => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.windowId === 'string' &&
+    typeof candidate.caption === 'string' &&
+    (typeof candidate.resourceClass === 'string' || candidate.resourceClass === null) &&
+    Array.isArray(candidate.desktopIds) &&
+    candidate.desktopIds.every((desktopId) => typeof desktopId === 'string')
+  );
+};
+
+const broadcastSelectedWindow = (windowInfo: ActiveWindow): void => {
+  for (const browserWindow of BrowserWindow.getAllWindows()) {
+    browserWindow.webContents.send('kde:selectedWindowFromKwin', windowInfo);
+  }
+};
+
+const storeAndBroadcastSelectedWindow = (windowInfo: ActiveWindow, source: string): void => {
+  selectedWindow = windowInfo;
+  console.log(`Parsed selected window from ${source}:`, selectedWindow);
+  broadcastSelectedWindow(selectedWindow);
+};
+
+const parseSelectedWindowUrl = (rawUrl: string): ActiveWindow | null => {
+  const parsedUrl = new URL(rawUrl);
+  const isSelectWindowUrl =
+    parsedUrl.protocol === `${PROTOCOL}:` &&
+    (parsedUrl.hostname === 'select-window' || parsedUrl.pathname === '/select-window');
+
+  if (!isSelectWindowUrl) {
+    return null;
+  }
+
+  const desktopIdsParam = parsedUrl.searchParams.get('desktopIds') ?? '';
+  const resourceClass = parsedUrl.searchParams.get('resourceClass');
+
+  return {
+    id: parsedUrl.searchParams.get('windowId') ?? '',
+    title: parsedUrl.searchParams.get('caption') ?? '',
+    windowClass: resourceClass && resourceClass.length > 0 ? resourceClass : null,
+    desktopIds:
+      desktopIdsParam.length > 0
+        ? desktopIdsParam.split(',').filter((desktopId) => desktopId.length > 0)
+        : []
+  };
+};
+
+const handleProtocolUrl = (rawUrl: string): void => {
+  try {
+    console.log('Received window-grid-kde URL:', rawUrl);
+    const parsedWindow = parseSelectedWindowUrl(rawUrl);
+
+    if (!parsedWindow) {
+      console.log('Ignored window-grid-kde URL with unsupported action:', rawUrl);
+      return;
+    }
+
+    storeAndBroadcastSelectedWindow(parsedWindow, 'URL');
+  } catch (error) {
+    console.error('Failed to parse window-grid-kde URL:', error);
+  }
+};
+
+const handleProtocolUrlsFromArgv = (argv: string[]): void => {
+  for (const argument of argv) {
+    if (argument.startsWith(`${PROTOCOL}://`)) {
+      handleProtocolUrl(argument);
+    }
+  }
+};
+
+const registerProtocolClient = (): void => {
+  if (process.defaultApp && process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [process.argv[1]]);
+    return;
+  }
+
+  app.setAsDefaultProtocolClient(PROTOCOL);
+};
+
+const handleKwinWindowPost = async (
+  request: IncomingMessage,
+  response: ServerResponse
+): Promise<void> => {
+  try {
+    const body = await readRequestBody(request);
+    const parsedPayload = JSON.parse(body) as unknown;
+
+    if (!isKwinWindowPayload(parsedPayload)) {
+      sendJson(response, 400, { ok: false, error: 'Invalid KWin window payload.' });
+      return;
+    }
+
+    const nextSelectedWindow = {
+      id: parsedPayload.windowId,
+      title: parsedPayload.caption,
+      windowClass: parsedPayload.resourceClass,
+      desktopIds: parsedPayload.desktopIds
+    };
+
+    console.log('Received KWin selected window over HTTP:', nextSelectedWindow);
+    storeAndBroadcastSelectedWindow(nextSelectedWindow, 'HTTP');
+    sendJson(response, 200, { ok: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown request error.';
+    sendJson(response, 400, { ok: false, error: message });
+  }
+};
+
+app.on('second-instance', (_event, commandLine) => {
+  handleProtocolUrlsFromArgv(commandLine);
+
+  const [browserWindow] = BrowserWindow.getAllWindows();
+
+  if (browserWindow) {
+    if (browserWindow.isMinimized()) {
+      browserWindow.restore();
+    }
+
+    browserWindow.focus();
+  }
+});
+
+app.on('open-url', (event, rawUrl) => {
+  event.preventDefault();
+  handleProtocolUrl(rawUrl);
+});
+
+const kwinBridgeServer = createServer((request, response) => {
+  if (request.method !== 'POST' || request.url !== '/kwin/window') {
+    sendJson(response, 404, { ok: false, error: 'Not found.' });
+    return;
+  }
+
+  void handleKwinWindowPost(request, response);
+});
+
+const startKwinBridgeServer = (): void => {
+  kwinBridgeServer.on('error', (error) => {
+    console.error('KWin HTTP bridge server error:', error);
+  });
+  kwinBridgeServer.listen(48745, '127.0.0.1', () => {
+    console.log('KWin HTTP bridge listening on http://127.0.0.1:48745');
+  });
+};
+
+const parseVirtualDesktops = (output: string): VirtualDesktop[] => {
+  const desktopPattern = /\[Argument: \([ui]ss\)\s+(\d+),\s+"([^"]+)",\s+"((?:\\"|[^"])*)"\]/g;
+  const desktops: VirtualDesktop[] = [];
+
+  for (const match of output.matchAll(desktopPattern)) {
+    desktops.push({
+      index: Number(match[1]),
+      id: match[2],
+      name: match[3].replace(/\\"/g, '"')
+    });
+  }
+
+  if (desktops.length === 0 && output.trim().length > 0) {
+    throw new Error('Unable to parse KWin virtual desktop data.');
+  }
+
+  return desktops;
+};
+
+const parseVariantMapValue = (output: string, key: string): string | null => {
+  const pattern = new RegExp(
+    `\\[Argument: \\{sv\\}\\s+"${key}",\\s+\\[Variant\\([^)]*\\):\\s+"((?:\\\\"|[^"])*)"\\]\\]`
+  );
+  const match = output.match(pattern);
+
+  return match ? match[1].replace(/\\"/g, '"') : null;
+};
+
+const parseWindowClass = (output: string): string | null => {
+  const match = output.match(/WM_CLASS\(STRING\)\s+=\s+"[^"]*",\s+"([^"]+)"/);
+
+  return match?.[1] ?? null;
+};
+
+const getVirtualDesktops = async (): Promise<VirtualDesktop[]> => {
+  const { stdout } = await execFileAsync(
+    'qdbus6',
+    ['--literal', 'org.kde.KWin', '/VirtualDesktopManager', 'desktops'],
+    {
+      timeout: 5000,
+      maxBuffer: 1024 * 1024
+    }
+  );
+
+  const desktops = parseVirtualDesktops(stdout);
+
+  console.log('qdbus6 virtual desktops raw output:', stdout);
+  console.log('qdbus6 virtual desktops parsed:', desktops);
+
+  return desktops;
+};
+
+const getWindowInfoFromKWin = async (windowId: string): Promise<ActiveWindow | null> => {
+  const output = await runCommand('qdbus6', [
+    '--literal',
+    'org.kde.KWin',
+    '/KWin',
+    'getWindowInfo',
+    windowId
+  ]);
+
+  console.log('qdbus6 active window getWindowInfo raw output:', output);
+
+  if (!output || output.includes('a{sv} {}')) {
+    return null;
+  }
+
+  const title =
+    parseVariantMapValue(output, 'caption') ??
+    parseVariantMapValue(output, 'title') ??
+    parseVariantMapValue(output, 'resourceName') ??
+    'Unknown window';
+  const windowClass =
+    parseVariantMapValue(output, 'resourceClass') ??
+    parseVariantMapValue(output, 'class') ??
+    null;
+
+  return {
+    id: windowId,
+    title,
+    windowClass
+  };
+};
+
+const getActiveWindowFromX = async (): Promise<ActiveWindow> => {
+  const id = await runCommand('xdotool', ['getactivewindow']);
+  const [titleResult, classResult] = await Promise.allSettled([
+    runCommand('xdotool', ['getwindowname', id]),
+    runCommand('xprop', ['-id', id, 'WM_CLASS'])
+  ]);
+  const title =
+    titleResult.status === 'fulfilled' && titleResult.value.length > 0
+      ? titleResult.value
+      : 'Unknown window';
+  const windowClass =
+    classResult.status === 'fulfilled' ? parseWindowClass(classResult.value) : null;
+
+  return {
+    id,
+    title,
+    windowClass
+  };
+};
+
+const getActiveWindow = async (): Promise<ActiveWindow> => {
+  try {
+    const activeWindowId = await runCommand('qdbus6', [
+      'org.kde.KWin',
+      '/KWin',
+      'activeWindow'
+    ]);
+
+    console.log('qdbus6 activeWindow output:', activeWindowId);
+
+    if (activeWindowId) {
+      const kwinWindow = await getWindowInfoFromKWin(activeWindowId);
+
+      if (kwinWindow) {
+        console.log('active window parsed from KWin:', kwinWindow);
+        return kwinWindow;
+      }
+    }
+  } catch (error) {
+    console.log('qdbus6 activeWindow unavailable, falling back:', error);
+  }
+
+  try {
+    const activeWindow = await getActiveWindowFromX();
+    console.log('active window parsed from X:', activeWindow);
+    return activeWindow;
+  } catch (error) {
+    console.log('active window detection failed:', error);
+    return unavailableActiveWindow;
+  }
+};
+
+const moveWindowToDesktop = async (
+  windowId: string,
+  desktopIndex: number
+): Promise<void> => {
+  if (!/^\d+$/.test(windowId)) {
+    throw new Error(`Invalid window id: ${windowId}`);
+  }
+
+  if (!Number.isInteger(desktopIndex) || desktopIndex < 0) {
+    throw new Error(`Invalid desktop index: ${desktopIndex}`);
+  }
+
+  console.log('Moving window with xdotool:', {
+    command: 'xdotool',
+    args: ['set_desktop_for_window', windowId, String(desktopIndex)]
+  });
+
+  await runCommand('xdotool', [
+    'set_desktop_for_window',
+    windowId,
+    String(desktopIndex)
+  ]);
+};
+
+ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
+ipcMain.handle('kde:getActiveWindow', async () => getActiveWindow());
+ipcMain.handle(
+  'kde:moveWindowToDesktop',
+  async (_event, windowId: string, desktopIndex: number) => {
+    console.log('IPC kde:moveWindowToDesktop received stored window id:', windowId);
+    return moveWindowToDesktop(windowId, desktopIndex);
+  }
+);
+
+const createWindow = (): void => {
+  const mainWindow = new BrowserWindow({
+    width: 1000,
+    height: 700,
+    center: true,
+    resizable: true,
+    title: 'Window Grid KDE',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.mjs'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
+  }
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (selectedWindow) {
+      mainWindow.webContents.send('kde:selectedWindowFromKwin', selectedWindow);
+    }
+  });
+};
+
+app.whenReady().then(() => {
+  registerProtocolClient();
+  startKwinBridgeServer();
+  createWindow();
+  handleProtocolUrlsFromArgv(process.argv);
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('before-quit', () => {
+  kwinBridgeServer.close();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
