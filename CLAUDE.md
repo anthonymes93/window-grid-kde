@@ -40,7 +40,7 @@ and Virtual Desktops via a graphical Activity × Desktop grid. KWin (the KDE win
 a custom JavaScript script that bridges to the app through a Node.js DBus service. The user
 selects a window via KDE's right-click context menu, picks a target grid cell, and clicks an
 action button. The app routes the command through four hops: React → Electron IPC → qdbus6 CLI
-→ DBus helper queue → KWin script execution.
+→ DBus helper queue → KWin script execution..
 
 ---
 
