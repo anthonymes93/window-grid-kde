@@ -1,3 +1,174 @@
+
+# Window Grid KDE - PRE-README
+
+## Current Status
+
+Window Grid KDE is an active KDE Plasma 6 workspace automation project.
+
+The core architecture has been proven:
+
+Electron → DBus Helper → KWin Script
+
+The project is not yet production-ready but is far beyond the proof-of-concept stage.
+
+---
+
+# Critical Architecture
+
+Window Grid KDE depends on a KWin script running inside KDE.
+
+This is not optional.
+
+Without the KWin script:
+
+* Move Window will not work
+* Activity switching will not work
+* Desktop switching will not work
+* Layout restoration will not work
+
+---
+
+# Source of Truth
+
+The KWin script source code is stored in GitHub at:
+
+scripts/window-grid-kde-kwin-script.js
+
+This file MUST remain in the repository.
+
+If this file is lost, a significant portion of the project is lost.
+
+---
+
+# Runtime Deployment
+
+KDE does not execute the repository file directly.
+
+The repository script must be deployed to KDE's script location:
+
+~/.local/share/kwin/scripts/testinglink/contents/code/main.js
+
+At runtime, KDE executes:
+
+main.js
+
+not
+
+scripts/window-grid-kde-kwin-script.js
+
+---
+
+# Development Workflow
+
+Edit:
+
+scripts/window-grid-kde-kwin-script.js
+
+Commit:
+
+scripts/window-grid-kde-kwin-script.js
+
+Push:
+
+scripts/window-grid-kde-kwin-script.js
+
+Deploy:
+
+scripts/window-grid-kde-kwin-script.js
+↓
+~/.local/share/kwin/scripts/testinglink/contents/code/main.js
+
+Restart KWin Script
+
+Test
+
+---
+
+# Why There Are Two Copies
+
+Repository Copy:
+
+scripts/window-grid-kde-kwin-script.js
+
+Purpose:
+
+* GitHub backup
+* Version control
+* Source code editing
+* Claude project memory
+
+Runtime Copy:
+
+~/.local/share/kwin/scripts/testinglink/contents/code/main.js
+
+Purpose:
+
+* Executed by KDE
+* Required for application functionality
+
+The runtime copy is generated from the repository copy.
+
+---
+
+# Disaster Recovery
+
+If a machine is lost:
+
+1. Clone repository
+2. Run setup
+3. Deploy KWin script
+4. Recreate runtime main.js
+5. Continue development
+
+The repository should contain everything required to recreate the deployed KWin script.
+
+---
+
+# Long-Term Goal
+
+Eventually a fresh machine should require only:
+
+git clone
+npm install
+npm run setup
+
+The setup process should automatically:
+
+* Install dependencies
+* Deploy the KWin script
+* Create main.js
+* Register the script with KDE
+* Start required services
+
+This goal has not yet been fully achieved.
+
+---
+
+# Current Focus
+
+BUG-001
+
+Move Current Desktop
+
+Current behavior:
+
+Electron → DBus Helper → Queue
+
+works
+
+KWin consumption of the queue
+
+broken
+
+See docs/BUGS.md for the current investigation.
+
+
+
+
+
+
+
+
 # Window Grid KDE - PRE-README
 
 ## Status
