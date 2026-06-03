@@ -15,6 +15,6 @@ cp "$REPO_SCRIPT" "$INSTALLED_SCRIPT"
 
 echo "Restarting KWin script..."
 qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript testinglink || true
-qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$HOME/.local/share/kwin/scripts/testinglink/metadata.json" testinglink || true
+qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "/.local/share/kwin/scripts/testinglink/contents/code/main.js" testinglink || true
 
 echo "Done. Repo script is now installed."
