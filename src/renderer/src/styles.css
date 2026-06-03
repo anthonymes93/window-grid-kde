@@ -126,8 +126,12 @@ button {
 }
 
 .refresh-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.62;
+}
+
+.refresh-button[data-loading="true"] {
+  cursor: wait;
 }
 
 .panel-status,

@@ -23,6 +23,8 @@ declare global {
       getVirtualDesktops: () => Promise<VirtualDesktop[]>;
       getActivities: () => Promise<Activity[]>;
       getCurrentActivity: () => Promise<string>;
+      getCurrentDesktopNumber: () => Promise<number>;
+      switchToDesktopNumber: (desktopNumber: number) => Promise<void>;
       getActiveWindow: () => Promise<ActiveWindow>;
       moveWindowToDesktop: (windowId: string, desktopId: string) => Promise<void>;
       moveWindowToActivityAndDesktop: (
@@ -31,6 +33,7 @@ declare global {
         desktopId: string
       ) => Promise<void>;
       switchToActivity: (activityId: string) => Promise<void>;
+      moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };
   }

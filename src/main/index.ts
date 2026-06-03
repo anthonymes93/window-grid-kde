@@ -340,12 +340,66 @@ const getCurrentActivity = async (): Promise<string> => {
   return output;
 };
 
+const getCurrentDesktopNumber = async (): Promise<number> => {
+  const output = await runCommand('qdbus6', [
+    'org.kde.KWin',
+    '/KWin',
+    'currentDesktop'
+  ]);
+  console.log('qdbus6 /KWin currentDesktop output:', output);
+  const parsed = parseInt(output, 10);
+  if (isNaN(parsed)) {
+    throw new Error(`Could not parse currentDesktop number from: ${output}`);
+  }
+  return parsed;
+};
+
+const switchToDesktopNumber = async (desktopNumber: number): Promise<void> => {
+  if (!Number.isInteger(desktopNumber) || desktopNumber < 1) {
+    throw new Error(`Invalid desktop number: ${desktopNumber}`);
+  }
+
+  console.log('[Electron] BEFORE switchToDesktopNumber:', desktopNumber);
+
+  await runCommand('qdbus6', [
+    'org.kde.KWin',
+    '/KWin',
+    'org.kde.KWin.setCurrentDesktop',
+    String(desktopNumber)
+  ]);
+
+  console.log('[Electron] AFTER switchToDesktopNumber:', desktopNumber);
+};
+
+const moveWindowToActivityOnly = async (
+  windowId: string,
+  activityId: string
+): Promise<void> => {
+  if (windowId.trim().length === 0) {
+    throw new Error(`Invalid window id: ${windowId}`);
+  }
+
+  if (activityId.trim().length === 0) {
+    throw new Error(`Invalid activity id: ${activityId}`);
+  }
+
+  console.log('Requesting activity-only move:', { windowId, activityId });
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.MoveWindowToActivityOnly',
+    windowId,
+    activityId
+  ]);
+};
+
 const switchToActivity = async (activityId: string): Promise<void> => {
   if (activityId.trim().length === 0) {
     throw new Error(`Invalid activity id: ${activityId}`);
   }
 
-  console.log('Switching to activity:', activityId);
+  console.log('[Electron] BEFORE switchToActivity:', activityId);
 
   await runCommand('qdbus6', [
     'org.kde.ActivityManager',
@@ -354,7 +408,7 @@ const switchToActivity = async (activityId: string): Promise<void> => {
     activityId
   ]);
 
-  console.log('Switched to activity:', activityId);
+  console.log('[Electron] AFTER switchToActivity:', activityId);
 };
 
 const getWindowInfoFromKWin = async (windowId: string): Promise<ActiveWindow | null> => {
@@ -489,15 +543,7 @@ const moveWindowToActivityAndDesktop = async (
     throw new Error(`Invalid desktop id: ${desktopId}`);
   }
 
-  console.log('Requesting KWin DBus helper activity+desktop move:', {
-    service: 'com.anthony.WindowGridKDE',
-    path: '/WindowGridKDE',
-    interface: 'com.anthony.WindowGridKDE',
-    method: 'MoveWindowToActivityAndDesktop',
-    windowId,
-    activityId,
-    desktopId
-  });
+  console.log('[Electron] BEFORE MoveWindowToActivityAndDesktop:', { windowId, activityId, desktopId });
 
   await runCommand('qdbus6', [
     'com.anthony.WindowGridKDE',
@@ -507,16 +553,30 @@ const moveWindowToActivityAndDesktop = async (
     activityId,
     desktopId
   ]);
+
+  console.log('[Electron] AFTER MoveWindowToActivityAndDesktop: move DELIVERED to KWin (qdbus6 returned)');
 };
 
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());
+ipcMain.handle('kde:getCurrentDesktopNumber', async () => getCurrentDesktopNumber());
+ipcMain.handle('kde:switchToDesktopNumber', async (_event, desktopNumber: number) => {
+  console.log('IPC kde:switchToDesktopNumber received desktopNumber:', desktopNumber);
+  return switchToDesktopNumber(desktopNumber);
+});
 ipcMain.handle('kde:getActiveWindow', async () => getActiveWindow());
 ipcMain.handle('kde:switchToActivity', async (_event, activityId: string) => {
   console.log('IPC kde:switchToActivity received activityId:', activityId);
   return switchToActivity(activityId);
 });
+ipcMain.handle(
+  'kde:moveWindowToActivityOnly',
+  async (_event, windowId: string, activityId: string) => {
+    console.log('IPC kde:moveWindowToActivityOnly received:', { windowId, activityId });
+    return moveWindowToActivityOnly(windowId, activityId);
+  }
+);
 ipcMain.handle(
   'kde:moveWindowToDesktop',
   async (_event, windowId: string, desktopId: string) => {
