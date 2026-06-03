@@ -368,6 +368,81 @@ function waitForRestoreLayoutRequest() {
   );
 }
 
+function resolveWindowActivities(window) {
+  if (Array.isArray(window.activities) && window.activities.length > 0) {
+    return window.activities;
+  }
+  if (
+    window.activities &&
+    typeof window.activities.length === 'number' &&
+    Number.isFinite(window.activities.length) &&
+    window.activities.length > 0
+  ) {
+    const result = [];
+    for (let i = 0; i < window.activities.length; i += 1) {
+      result.push(String(window.activities[i]));
+    }
+    return result;
+  }
+  return [];
+}
+
+function computeWindowCounts() {
+  const allWindows = getWorkspaceWindows();
+  const allDesktops = getWorkspaceDesktops();
+  const counts = {};
+
+  for (let i = 0; i < allWindows.length; i++) {
+    const w = allWindows[i];
+    if (!isNormalUserWindow(w)) continue;
+
+    const windowActivities = resolveWindowActivities(w);
+    const windowDesktops = w.onAllDesktops ? allDesktops : resolveWindowDesktops(w);
+
+    if (windowDesktops.length === 0 || windowActivities.length === 0) continue;
+
+    for (let ai = 0; ai < windowActivities.length; ai++) {
+      const activityId = windowActivities[ai];
+      for (let di = 0; di < windowDesktops.length; di++) {
+        const desktop = windowDesktops[di];
+        const desktopId = desktop && desktop.id ? String(desktop.id) : null;
+        if (!desktopId) continue;
+        const key = activityId + '|' + desktopId;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    }
+  }
+
+  return JSON.stringify(counts);
+}
+
+function waitForWindowCountsRequest() {
+  let handled = false;
+  let watchdogId;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[SECTION 2] WaitForWindowCountsRequest: watchdog fired — re-arming');
+        callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});
+        waitForWindowCountsRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'WaitForWindowCountsRequest', function(trigger) {
+    if (handled) return;
+    handled = true;
+    try { clearTimeout(watchdogId); } catch (e) {}
+    if (trigger === 'refresh') {
+      callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});
+    }
+    waitForWindowCountsRequest();
+  });
+}
+
 log('[SECTION 2] init: starting polling loops at t=' + Date.now());
 waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();
+waitForWindowCountsRequest();
+callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});

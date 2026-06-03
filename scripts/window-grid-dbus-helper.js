@@ -15,6 +15,8 @@ const pendingCurrentDesktopMoveRequests = [];
 const pendingCurrentDesktopMoveWaiters = [];
 const pendingRestoreRequests = [];
 const pendingRestoreWaiters = [];
+const pendingWindowCountsRequests = [];
+const pendingWindowCountsWaiters = [];
 let requestIdCounter = 0;
 
 const toDesktopIds = (desktopIdsCsv) =>
@@ -246,6 +248,41 @@ class WindowGridKDEInterface extends Interface {
     await fetch('http://127.0.0.1:48745/toggle', { method: 'POST' });
   }
 
+  RequestWindowCounts() {
+    if (pendingWindowCountsWaiters.length > 0) {
+      const waiter = pendingWindowCountsWaiters.shift();
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve('refresh');
+    } else {
+      pendingWindowCountsRequests.push('refresh');
+    }
+  }
+
+  WaitForWindowCountsRequest() {
+    if (pendingWindowCountsRequests.length > 0) {
+      pendingWindowCountsRequests.shift();
+      return 'refresh';
+    }
+
+    return new Promise((resolve) => {
+      const waiter = { resolve, timeoutId: null };
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingWindowCountsWaiters.indexOf(waiter);
+        if (idx >= 0) pendingWindowCountsWaiters.splice(idx, 1);
+        resolve('');
+      }, 8000);
+      pendingWindowCountsWaiters.push(waiter);
+    });
+  }
+
+  async ReceiveWindowCounts(jsonData) {
+    await fetch('http://127.0.0.1:48745/kwin/window-counts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: jsonData
+    });
+  }
+
   TriggerRestoreLayout() {
     const requestId = String(++requestIdCounter);
     console.log('[Window Grid DBus Helper] TriggerRestoreLayout called:', { requestId });
@@ -438,6 +475,27 @@ const waitForCurrentDesktopMoveDescriptor = method({ inSignature: '', outSignatu
 });
 
 waitForCurrentDesktopMoveDescriptor.finisher(WindowGridKDEInterface);
+
+const requestWindowCountsDescriptor = method({ inSignature: '', outSignature: '' })({
+  kind: 'method',
+  key: 'RequestWindowCounts',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'RequestWindowCounts')
+});
+requestWindowCountsDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForWindowCountsDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'WaitForWindowCountsRequest',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForWindowCountsRequest')
+});
+waitForWindowCountsDescriptor.finisher(WindowGridKDEInterface);
+
+const receiveWindowCountsDescriptor = method({ inSignature: 's', outSignature: '' })({
+  kind: 'method',
+  key: 'ReceiveWindowCounts',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ReceiveWindowCounts')
+});
+receiveWindowCountsDescriptor.finisher(WindowGridKDEInterface);
 
 const toggleWindowDescriptor = method({ inSignature: '', outSignature: '' })({
   kind: 'method',

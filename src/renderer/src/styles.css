@@ -283,17 +283,17 @@ button:disabled {
 }
 
 .grid-cell {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  min-height: 54px;
+  padding: 6px 7px 5px;
   border: 1px solid var(--border-muted);
   border-radius: 6px;
   background: var(--bg);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
   transition:
     background 100ms ease,
     border-color 100ms ease,
@@ -319,9 +319,39 @@ button:disabled {
   color: #ffffff;
 }
 
-.grid-cell span {
+.cell-num {
   font-size: 11px;
   font-weight: 700;
+  line-height: 1;
+}
+
+.cell-windows {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.win-thumb {
+  display: inline-block;
+  width: 8px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  opacity: 0.55;
+  flex-shrink: 0;
+}
+
+.grid-cell.selected .win-thumb {
+  opacity: 0.8;
+}
+
+.win-overflow {
+  font-size: 9px;
+  font-weight: 700;
+  opacity: 0.7;
+  line-height: 1;
 }
 
 .empty-grid {

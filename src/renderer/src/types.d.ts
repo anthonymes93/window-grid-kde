@@ -40,6 +40,9 @@ declare global {
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       restoreLastLayout: () => Promise<void>;
       hideWindow: () => Promise<void>;
+      getWindowCounts: () => Promise<Record<string, number>>;
+      requestWindowCounts: () => Promise<void>;
+      onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => () => void;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };
   }

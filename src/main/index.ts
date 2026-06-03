@@ -42,6 +42,7 @@ const unavailableActiveWindow: ActiveWindow = {
 };
 
 let selectedWindow: ActiveWindow | null = null;
+let latestWindowCounts: Record<string, number> = {};
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -259,6 +260,21 @@ const kwinBridgeServer = createServer((request, response) => {
   if (request.method === 'POST' && request.url === '/toggle') {
     void toggleWindow();
     sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/kwin/window-counts') {
+    readRequestBody(request).then((body) => {
+      try {
+        latestWindowCounts = JSON.parse(body) as Record<string, number>;
+        for (const win of BrowserWindow.getAllWindows()) {
+          win.webContents.send('kde:windowCountsUpdated', latestWindowCounts);
+        }
+        sendJson(response, 200, { ok: true });
+      } catch {
+        sendJson(response, 400, { ok: false, error: 'Invalid JSON' });
+      }
+    }).catch(() => sendJson(response, 400, { ok: false, error: 'Read error' }));
     return;
   }
 
@@ -641,6 +657,13 @@ const moveCurrentDesktopToActivityAndDesktop = async (
 };
 
 ipcMain.handle('kde:hideWindow', () => hideWindow());
+ipcMain.handle('kde:getWindowCounts', () => latestWindowCounts);
+ipcMain.handle('kde:requestWindowCounts', () => {
+  void runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE', '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.RequestWindowCounts'
+  ]);
+});
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());

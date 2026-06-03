@@ -24,6 +24,15 @@ contextBridge.exposeInMainWorld('kde', {
     ipcRenderer.invoke('kde:moveWindowToActivityOnly', windowId, activityId),
   restoreLastLayout: () => ipcRenderer.invoke('kde:restoreLastLayout'),
   hideWindow: () => ipcRenderer.invoke('kde:hideWindow'),
+  getWindowCounts: () => ipcRenderer.invoke('kde:getWindowCounts'),
+  requestWindowCounts: () => ipcRenderer.invoke('kde:requestWindowCounts'),
+  onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, counts: Record<string, number>): void => {
+      callback(counts);
+    };
+    ipcRenderer.on('kde:windowCountsUpdated', listener);
+    return () => { ipcRenderer.removeListener('kde:windowCountsUpdated', listener); };
+  },
   onSelectedWindowFromKwin: (callback: (windowInfo: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, windowInfo: unknown): void => {
       callback(windowInfo);

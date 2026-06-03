@@ -29,6 +29,7 @@ export function App(): JSX.Element {
   const [isRestoringLayout, setIsRestoringLayout] = useState(false);
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>([]);
+  const [windowCounts, setWindowCounts] = useState<Record<string, number>>({});
 
   const loadActivities = useCallback(async (): Promise<void> => {
     setIsLoadingActivities(true);
@@ -99,11 +100,29 @@ export function App(): JSX.Element {
     }
   }, []);
 
+  const loadWindowCounts = useCallback(async (): Promise<void> => {
+    try {
+      const stored = await window.kde.getWindowCounts();
+      if (Object.keys(stored).length > 0) setWindowCounts(stored);
+    } catch {}
+    try {
+      await window.kde.requestWindowCounts();
+    } catch {}
+  }, []);
+
   useEffect(() => {
     void loadActivities();
     void loadVirtualDesktops();
     void loadCurrentActivity();
-  }, [loadActivities, loadVirtualDesktops, loadCurrentActivity]);
+    void loadWindowCounts();
+  }, [loadActivities, loadVirtualDesktops, loadCurrentActivity, loadWindowCounts]);
+
+  useEffect(() => {
+    const unsubscribe = window.kde.onWindowCountsUpdated((counts) => {
+      setWindowCounts(counts);
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => {
     const unsubscribe = window.kde.onSelectedWindowFromKwin((nextSelectedWindow) => {
@@ -354,7 +373,7 @@ export function App(): JSX.Element {
           <button
             className="icon-button"
             type="button"
-            onClick={() => { void loadActivities(); void loadVirtualDesktops(); }}
+            onClick={() => { void loadActivities(); void loadVirtualDesktops(); void loadWindowCounts(); }}
             disabled={isLoadingActivities || isLoadingDesktops}
             title="Refresh grid"
           >
@@ -388,6 +407,11 @@ export function App(): JSX.Element {
                       selection?.activity.id === activity.id &&
                       selection.desktop.id === desktop.id;
 
+                    const count = windowCounts[`${activity.id}|${desktop.id}`] ?? 0;
+                    const MAX_THUMBS = 7;
+                    const thumbs = Math.min(count, MAX_THUMBS);
+                    const overflow = count > MAX_THUMBS ? count - MAX_THUMBS : 0;
+
                     return (
                       <button
                         className={isSelected ? 'grid-cell selected' : 'grid-cell'}
@@ -395,9 +419,19 @@ export function App(): JSX.Element {
                         type="button"
                         onClick={() => handleCellClick(activity, desktop)}
                         aria-pressed={isSelected}
-                        aria-label={`${activity.name}, ${desktop.name}`}
+                        aria-label={`${activity.name}, ${desktop.name}, ${count} windows`}
                       >
-                        <span>{desktop.index + 1}</span>
+                        <span className="cell-num">{desktop.index + 1}</span>
+                        {count > 0 && (
+                          <div className="cell-windows">
+                            {Array.from({ length: thumbs }).map((_, i) => (
+                              <span key={i} className="win-thumb" />
+                            ))}
+                            {overflow > 0 && (
+                              <span className="win-overflow">+{overflow}</span>
+                            )}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
