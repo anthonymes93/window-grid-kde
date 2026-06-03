@@ -331,9 +331,14 @@ export function App(): JSX.Element {
           <button
             className="icon-button"
             type="button"
-            onClick={() => void loadCurrentActivity()}
-            disabled={isLoadingCurrentActivity}
-            title="Refresh current activity"
+            onClick={() => {
+              void loadCurrentActivity();
+              void loadActivities();
+              void loadVirtualDesktops();
+              void loadWindowCounts();
+            }}
+            disabled={isLoadingCurrentActivity || isLoadingActivities || isLoadingDesktops}
+            title="Refresh"
           >
             ↻
           </button>
