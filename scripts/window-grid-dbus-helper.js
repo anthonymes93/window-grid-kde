@@ -248,6 +248,10 @@ class WindowGridKDEInterface extends Interface {
     await fetch('http://127.0.0.1:48745/toggle', { method: 'POST' });
   }
 
+  async ToggleItWorks() {
+    await fetch('http://127.0.0.1:48745/it-works', { method: 'POST' });
+  }
+
   RequestWindowCounts() {
     if (pendingWindowCountsWaiters.length > 0) {
       const waiter = pendingWindowCountsWaiters.shift();
@@ -496,6 +500,13 @@ const receiveWindowCountsDescriptor = method({ inSignature: 's', outSignature: '
   descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ReceiveWindowCounts')
 });
 receiveWindowCountsDescriptor.finisher(WindowGridKDEInterface);
+
+const toggleItWorksDescriptor = method({ inSignature: '', outSignature: '' })({
+  kind: 'method',
+  key: 'ToggleItWorks',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ToggleItWorks')
+});
+toggleItWorksDescriptor.finisher(WindowGridKDEInterface);
 
 const toggleWindowDescriptor = method({ inSignature: '', outSignature: '' })({
   kind: 'method',

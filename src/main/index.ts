@@ -221,6 +221,28 @@ app.on('open-url', (event, rawUrl) => {
   handleProtocolUrl(rawUrl);
 });
 
+let itWorksWindow: import('electron').BrowserWindow | null = null;
+
+const toggleItWorksWindow = (): void => {
+  if (itWorksWindow && !itWorksWindow.isDestroyed()) {
+    itWorksWindow.close();
+    return;
+  }
+  itWorksWindow = new BrowserWindow({
+    frame: false,
+    fullscreen: true,
+    backgroundColor: '#0d1117',
+    webPreferences: { nodeIntegration: false, contextIsolation: true }
+  });
+  void itWorksWindow.loadURL(
+    'data:text/html,' +
+    encodeURIComponent(
+      '<!DOCTYPE html><html><body style="margin:0;background:#0d1117;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Inter,ui-sans-serif,sans-serif;color:#e6edf3;cursor:pointer" onclick="window.close()"><h1 style="font-size:80px;font-weight:700;letter-spacing:-2px">it works</h1></body></html>'
+    )
+  );
+  itWorksWindow.on('closed', () => { itWorksWindow = null; });
+};
+
 const hideWindow = (): void => {
   const [mainWindow] = BrowserWindow.getAllWindows();
   if (!mainWindow) return;
@@ -263,6 +285,12 @@ const toggleWindow = async (): Promise<void> => {
 const kwinBridgeServer = createServer((request, response) => {
   if (request.method === 'POST' && request.url === '/toggle') {
     void toggleWindow();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (request.method === 'POST' && request.url === '/it-works') {
+    toggleItWorksWindow();
     sendJson(response, 200, { ok: true });
     return;
   }

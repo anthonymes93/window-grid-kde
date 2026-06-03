@@ -704,6 +704,21 @@ registerShortcut(
     }
 );
 
+registerShortcut(
+    "window-grid-kde-it-works",
+    "Window Grid KDE: It Works",
+    "Meta+A",
+    function() {
+        callDBus(
+            WINDOW_GRID_KDE_SERVICE,
+            WINDOW_GRID_KDE_PATH,
+            WINDOW_GRID_KDE_INTERFACE,
+            "ToggleItWorks",
+            function() {}
+        );
+    }
+);
+
 print("Window Grid KDE: [SECTION 1] init complete, calling waitForMoveRequests at t=" + Date.now());
 waitForMoveRequests();
 
