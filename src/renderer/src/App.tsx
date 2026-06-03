@@ -181,12 +181,12 @@ export function App(): JSX.Element {
     void window.kde.hideWindow();
     try {
       await window.kde.moveWindowToActivityAndDesktop(storedWindow.id, targetActivity.id, targetDesktop.id);
-      await wait(500);
+      await wait(150);
       await window.kde.switchToActivity(targetActivity.id);
       setCurrentActivityId(targetActivity.id);
-      await wait(300);
+      await wait(80);
       await window.kde.switchToDesktopNumber(targetDesktopNumber);
-      await wait(300);
+      await wait(80);
 
       const [verifyActivityId, verifyDesktopNumber] = await Promise.all([
         window.kde.getCurrentActivity(),
@@ -252,39 +252,11 @@ export function App(): JSX.Element {
     if (!selection) return;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
-    const targetDesktopNumber = targetDesktop.index + 1;
 
     setIsMovingCurrentDesktop(true);
     void window.kde.hideWindow();
     try {
-      const sourceActivityId = await window.kde.getCurrentActivity();
-      setCurrentActivityId(sourceActivityId);
-
       await window.kde.moveCurrentDesktopToActivityAndDesktop(targetActivity.id, targetDesktop.id);
-      await wait(500);
-      await window.kde.switchToActivity(targetActivity.id);
-      setCurrentActivityId(targetActivity.id);
-      await wait(300);
-      await window.kde.switchToDesktopNumber(targetDesktopNumber);
-      await wait(300);
-
-      const [verifyActivityId, verifyDesktopNumber] = await Promise.all([
-        window.kde.getCurrentActivity(),
-        window.kde.getCurrentDesktopNumber()
-      ]);
-
-      if (verifyActivityId !== targetActivity.id) {
-        await window.kde.switchToActivity(targetActivity.id);
-        setCurrentActivityId(targetActivity.id);
-      }
-
-      if (verifyDesktopNumber !== targetDesktopNumber) {
-        await window.kde.switchToDesktopNumber(targetDesktopNumber);
-      }
-
-      const finalActivityId = await window.kde.getCurrentActivity();
-      setCurrentActivityId(finalActivityId);
-
       setEventLog((current) => [
         `✓ Desktop moved → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current

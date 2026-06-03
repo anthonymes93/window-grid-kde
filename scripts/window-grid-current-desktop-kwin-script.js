@@ -234,6 +234,22 @@ for (const window of allWindows) {
 }
 let lastBulkMoveLayout = null;
 
+function switchToActivityAndDesktop(activityId, desktopId) {
+  callDBus(
+    'org.kde.ActivityManager',
+    '/ActivityManager/Activities',
+    'org.kde.ActivityManager.Activities',
+    'SetCurrentActivity',
+    activityId,
+    function() {
+      const targetDesktop = findDesktopById(desktopId);
+      if (targetDesktop) {
+        workspace.currentDesktop = targetDesktop;
+      }
+    }
+  );
+}
+
 function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) {
   if (!targetActivityId || !targetDesktopId) {
     return;
@@ -243,7 +259,10 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
   log('[MOVE START] t=' + moveStartTime + ' | requestId=' + requestId);
 
   const currentActivityId = workspace.currentActivity;
-  const currentDesktopId = getId(workspace.currentDesktop);
+  const currentDesktop = workspace.currentDesktop;
+  const currentDesktopId = currentDesktop && currentDesktop.id
+    ? String(currentDesktop.id)
+    : "";
 
   const candidateWindows = getWorkspaceWindows();
   const matchingWindows = candidateWindows.filter((window) =>
@@ -254,6 +273,9 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
   );
 
   log('Matching windows found: ' + matchingWindows.length);
+
+  // Switch to target immediately so the transition plays while windows move
+  switchToActivityAndDesktop(targetActivityId, targetDesktopId);
 
   lastBulkMoveLayout = [];
   for (const window of matchingWindows) {
@@ -275,8 +297,9 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
       lastBulkMoveLayout.push({ window, caption, x: savedGeo.x, y: savedGeo.y, width: savedGeo.width, height: savedGeo.height });
     }
   }
+
   if (lastBulkMoveLayout.length > 0) {
-    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-autorestore', '', '2000', function() {
+    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-autorestore', '', '800', function() {
       log('[AUTO RESTORE START]');
       runRestoreLayout();
       log('[AUTO RESTORE COMPLETE]');

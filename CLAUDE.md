@@ -234,8 +234,8 @@ These were hard-won fixes. Do NOT revert them:
    ```
    Not `getId(workspace.currentDesktop)` — that produces the wrong value in the installed script.
 
-5. **Auto-restore delay is 2000ms** — do not reduce without testing. Shorter delays cause visible
-   glitching because KWin placement events override the geometry before 2s is up.
+5. **Auto-restore delay is 800ms** — reduced from 2000ms. If window positions glitch after a
+   bulk move, increase this value. KWin placement events need time to settle before restore runs.
 
 6. **`runRestoreLayout()` is shared** between the auto-restore Sleep callback and the manual
    `TriggerRestoreLayout` path. Do not inline it in either path.

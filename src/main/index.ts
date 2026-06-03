@@ -251,8 +251,12 @@ const toggleWindow = async (): Promise<void> => {
     await pinToAllActivities(mainWindow);
     mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mainWindow.show();
-    mainWindow.setFullScreen(true);
+    mainWindow.maximize();
     mainWindow.focus();
+    void runCommand('qdbus6', [
+      'com.anthony.WindowGridKDE', '/WindowGridKDE',
+      'com.anthony.WindowGridKDE.RequestWindowCounts'
+    ]);
   }
 };
 
@@ -725,6 +729,7 @@ const createWindow = (): void => {
     height: 700,
     center: true,
     resizable: true,
+    frame: false,
     title: 'Window Grid KDE',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
