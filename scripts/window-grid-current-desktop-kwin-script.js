@@ -237,68 +237,20 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
     return;
   }
 
+  const moveStartTime = Date.now();
+  log('[MOVE START] t=' + moveStartTime + ' | requestId=' + requestId);
+
   const currentActivityId = workspace.currentActivity;
   const currentDesktopId = getId(workspace.currentDesktop);
 
-  log('MoveCurrentDesktopToActivityAndDesktop');
-  log('');
-  log(`Current activity: ${currentActivityId}`);
-  log(`Current desktop: ${currentDesktopId}`);
-  log(`Target activity: ${targetActivityId}`);
-  log(`Target desktop: ${targetDesktopId}`);
-  log('');
-  logWorkspaceDesktopApiState();
-  log('');
-
   const candidateWindows = getWorkspaceWindows();
-
-  log(`Candidate windows found: ${candidateWindows.length}`);
-  for (const window of candidateWindows) {
-    log(
-      `Candidate: ${getCaption(window)} | normalWindow=${Boolean(window.normalWindow)} | desktopWindow=${Boolean(window.desktopWindow)} | dock=${Boolean(window.dock)} | skipTaskbar=${Boolean(window.skipTaskbar)} | activities=${getWindowActivityIds(window)} | desktops=${getWindowDesktopIds(window)}`
-    );
-  }
-  log('');
-
-  log('--- Per-window filter diagnostics ---');
-  for (const window of candidateWindows) {
-    const passesNormal = isNormalUserWindow(window);
-    const passesActivity = windowBelongsToActivity(window, currentActivityId);
-    const passesDesktop = windowBelongsToDesktop(window, currentDesktopId);
-    log(
-      '[FILTER] caption="' + getCaption(window) + '"' +
-      ' | currentActivityId=' + currentActivityId +
-      ' | currentDesktopId=' + currentDesktopId +
-      ' | windowActivityIds=' + getWindowActivityIds(window) +
-      ' | windowDesktopIds=' + getWindowDesktopIds(window) +
-      ' | isNormalUserWindow=' + passesNormal +
-      ' | windowBelongsToActivity=' + passesActivity +
-      ' | windowBelongsToDesktop=' + passesDesktop
-    );
-    const resolvedDesktops = resolveWindowDesktops(window);
-    const windowDesktopResolvedIds = resolvedDesktops.map((d) => getId(d)).join(',');
-    log(
-      '[FILTER-DESKTOP] caption="' + getCaption(window) + '"' +
-      ' | typeof window.desktop=' + (typeof window.desktop) +
-      ' | window.desktop=' + String(window.desktop) +
-      ' | getId(window.desktop)=' + getId(window.desktop) +
-      ' | window.desktops=' + (Array.isArray(window.desktops) ? '[len=' + window.desktops.length + '] ' + window.desktops.map((d) => getId(d)).join(',') : String(window.desktops)) +
-      ' | windowDesktopResolvedIds=' + windowDesktopResolvedIds
-    );
-  }
-  log('');
-
   const matchingWindows = candidateWindows.filter((window) =>
     isNormalUserWindow(window) &&
     windowBelongsToActivity(window, currentActivityId) &&
     windowBelongsToDesktop(window, currentDesktopId)
   );
 
-  log(`Filtering for current activity: ${currentActivityId}`);
-  log(`Filtering for current desktop: ${currentDesktopId}`);
-  log(`Matching windows found: ${matchingWindows.length}`);
-  log('');
-  log('Moving:');
+  log('Matching windows found: ' + matchingWindows.length);
 
   lastBulkMoveLayout = [];
   for (const window of matchingWindows) {
@@ -314,44 +266,20 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
     const isMaximized = (typeof maximizeMode === 'number' && maximizeMode !== 0) || maximizeMode === true;
     const isFullScreen = fullScreen === true;
 
-    log(
-      '[GEOMETRY BEFORE] caption="' + caption + '"' +
-      ' | x=' + (savedGeo ? savedGeo.x : '?') +
-      ' | y=' + (savedGeo ? savedGeo.y : '?') +
-      ' | width=' + (savedGeo ? savedGeo.width : '?') +
-      ' | height=' + (savedGeo ? savedGeo.height : '?')
-    );
-
-    {
-      let _outName = '(unavailable)';
-      let _screen = '(unavailable)';
-      let _dpr = '(unavailable)';
-      let _bufGeo = '(unavailable)';
-      try { const o = window.output; if (o) { _outName = String(o.name !== undefined ? o.name : o); _dpr = o.devicePixelRatio !== undefined ? String(o.devicePixelRatio) : (o.scale !== undefined ? String(o.scale) : '(unavailable)'); } } catch (e) { _outName = 'ERR:' + e; }
-      try { if (window.screen !== undefined) _screen = String(window.screen); } catch (e) { _screen = 'ERR:' + e; }
-      try { const bg = window.bufferGeometry; _bufGeo = bg ? (bg.x + ',' + bg.y + ',' + bg.width + ',' + bg.height) : '(null)'; } catch (e) {}
-      log('[MONITOR SAVE] caption="' + caption + '" | output=' + _outName + ' | screen=' + _screen + ' | devicePixelRatio=' + _dpr + ' | frameGeo=' + (savedGeo ? savedGeo.x + ',' + savedGeo.y + ',' + savedGeo.width + ',' + savedGeo.height : '(null)') + ' | bufferGeo=' + _bufGeo);
-    }
-
-    {
-      let _fs = '?', _mm = '?', _tm = '?', _min = '?', _ka = '?', _kb = '?';
-      try { _fs = String(window.fullScreen !== undefined ? window.fullScreen : (window.fullscreen !== undefined ? window.fullscreen : '(unavailable)')); } catch(e) {}
-      try { _mm = window.maximizeMode !== undefined ? String(window.maximizeMode) : '(unavailable)'; } catch(e) {}
-      try { _tm = window.quickTileMode !== undefined ? String(window.quickTileMode) : '(unavailable)'; } catch(e) {}
-      try { _min = window.minimized !== undefined ? String(window.minimized) : '(unavailable)'; } catch(e) {}
-      try { _ka = window.keepAbove !== undefined ? String(window.keepAbove) : '(unavailable)'; } catch(e) {}
-      try { _kb = window.keepBelow !== undefined ? String(window.keepBelow) : '(unavailable)'; } catch(e) {}
-      log('[STATE SAVE] caption="' + caption + '" | fullScreen=' + _fs + ' | maximizeMode=' + _mm + ' | quickTileMode=' + _tm + ' | minimized=' + _min + ' | keepAbove=' + _ka + ' | keepBelow=' + _kb);
-    }
-
-    log(`* ${caption}`);
     moveWindowToActivityAndDesktop(window, targetActivityId, targetDesktopId);
 
     if (savedGeo && !isMaximized && !isFullScreen) {
       lastBulkMoveLayout.push({ window, caption, x: savedGeo.x, y: savedGeo.y, width: savedGeo.width, height: savedGeo.height });
     }
   }
-  log('lastBulkMoveLayout saved: ' + lastBulkMoveLayout.length + ' windows');
+  if (lastBulkMoveLayout.length > 0) {
+    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-autorestore', '', '2000', function() {
+      log('[AUTO RESTORE START]');
+      runRestoreLayout();
+      log('[AUTO RESTORE COMPLETE]');
+    });
+    log('[AUTO RESTORE SCHEDULED]');
+  }
 
   log(`MoveCurrentDesktopToActivityAndDesktop complete: requestId=${requestId}`);
 }
@@ -374,71 +302,33 @@ function waitForCurrentDesktopMoveRequest() {
   );
 }
 
+function runRestoreLayout() {
+  if (lastBulkMoveLayout && lastBulkMoveLayout.length > 0) {
+    for (let i = 0; i < lastBulkMoveLayout.length; i++) {
+      const entry = lastBulkMoveLayout[i];
+      try {
+        entry.window.frameGeometry = { x: entry.x, y: entry.y, width: entry.width, height: entry.height };
+      } catch (e) {
+        log('[LAYOUT RESTORE] caption="' + entry.caption + '" | ERROR: ' + e);
+      }
+    }
+  }
+}
+
 function waitForRestoreLayoutRequest() {
-  log('waiting for restore layout request');
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForRestoreLayoutRequest',
     function(requestId) {
-      log('restore layout request received | requestId=' + requestId + ' | lastBulkMoveLayout length=' + (lastBulkMoveLayout ? lastBulkMoveLayout.length : 'null'));
       if (requestId) {
-        if (lastBulkMoveLayout && lastBulkMoveLayout.length > 0) {
-          log('RestoreLastLayout: lastBulkMoveLayout length=' + lastBulkMoveLayout.length);
-          for (let i = 0; i < lastBulkMoveLayout.length; i++) {
-            const entry = lastBulkMoveLayout[i];
-            let windowExists = false;
-            try { windowExists = Boolean(entry.window && entry.window.frameGeometry); } catch (e) {}
-            log(
-              'RestoreLastLayout window[' + i + ']' +
-              ' | caption="' + entry.caption + '"' +
-              ' | windowExists=' + windowExists +
-              ' | savedGeo=' + entry.x + ',' + entry.y + ',' + entry.width + ',' + entry.height
-            );
-            {
-              let _outName = '(unavailable)';
-              let _screen = '(unavailable)';
-              let _dpr = '(unavailable)';
-              let _bufGeo = '(unavailable)';
-              let _frameGeo = '(unavailable)';
-              try { const o = entry.window.output; if (o) { _outName = String(o.name !== undefined ? o.name : o); _dpr = o.devicePixelRatio !== undefined ? String(o.devicePixelRatio) : (o.scale !== undefined ? String(o.scale) : '(unavailable)'); } } catch (e) { _outName = 'ERR:' + e; }
-              try { if (entry.window.screen !== undefined) _screen = String(entry.window.screen); } catch (e) { _screen = 'ERR:' + e; }
-              try { const bg = entry.window.bufferGeometry; _bufGeo = bg ? (bg.x + ',' + bg.y + ',' + bg.width + ',' + bg.height) : '(null)'; } catch (e) {}
-              try { const fg = entry.window.frameGeometry; _frameGeo = fg ? (fg.x + ',' + fg.y + ',' + fg.width + ',' + fg.height) : '(null)'; } catch (e) {}
-              log('[MONITOR RESTORE] caption="' + entry.caption + '" | output=' + _outName + ' | screen=' + _screen + ' | devicePixelRatio=' + _dpr + ' | frameGeo=' + _frameGeo + ' | bufferGeo=' + _bufGeo + ' | savedGeo=' + entry.x + ',' + entry.y + ',' + entry.width + ',' + entry.height);
-            }
-            {
-              let _fs = '?', _mm = '?', _tm = '?', _min = '?', _ka = '?', _kb = '?';
-              try { _fs = String(entry.window.fullScreen !== undefined ? entry.window.fullScreen : (entry.window.fullscreen !== undefined ? entry.window.fullscreen : '(unavailable)')); } catch(e) {}
-              try { _mm = entry.window.maximizeMode !== undefined ? String(entry.window.maximizeMode) : '(unavailable)'; } catch(e) {}
-              try { _tm = entry.window.quickTileMode !== undefined ? String(entry.window.quickTileMode) : '(unavailable)'; } catch(e) {}
-              try { _min = entry.window.minimized !== undefined ? String(entry.window.minimized) : '(unavailable)'; } catch(e) {}
-              try { _ka = entry.window.keepAbove !== undefined ? String(entry.window.keepAbove) : '(unavailable)'; } catch(e) {}
-              try { _kb = entry.window.keepBelow !== undefined ? String(entry.window.keepBelow) : '(unavailable)'; } catch(e) {}
-              log('[STATE RESTORE] caption="' + entry.caption + '" | fullScreen=' + _fs + ' | maximizeMode=' + _mm + ' | quickTileMode=' + _tm + ' | minimized=' + _min + ' | keepAbove=' + _ka + ' | keepBelow=' + _kb);
-            }
-            try {
-              log('[RESTORE APPLY] caption="' + entry.caption + '" | x=' + entry.x + ' | y=' + entry.y + ' | width=' + entry.width + ' | height=' + entry.height);
-              entry.window.frameGeometry = { x: entry.x, y: entry.y, width: entry.width, height: entry.height };
-              const geoApplied = entry.window.frameGeometry;
-              log('[RESTORE APPLIED] caption="' + entry.caption + '" | x=' + (geoApplied ? geoApplied.x : '?') + ' | y=' + (geoApplied ? geoApplied.y : '?') + ' | width=' + (geoApplied ? geoApplied.width : '?') + ' | height=' + (geoApplied ? geoApplied.height : '?'));
-              const geoResult = entry.window.frameGeometry;
-              log('[RESTORE RESULT] caption="' + entry.caption + '" | x=' + (geoResult ? geoResult.x : '?') + ' | y=' + (geoResult ? geoResult.y : '?') + ' | width=' + (geoResult ? geoResult.width : '?') + ' | height=' + (geoResult ? geoResult.height : '?'));
-            } catch (e) {
-              log('[RESTORE APPLY] caption="' + entry.caption + '" | ERROR: ' + e);
-            }
-          }
-        } else {
-          log('RestoreLastLayout: no layout saved');
-        }
+        runRestoreLayout();
       }
       waitForRestoreLayoutRequest();
     }
   );
 }
 
-log('Current desktop move script loaded');
-log('Restore layout listener started');
 waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();
