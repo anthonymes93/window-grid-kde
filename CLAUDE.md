@@ -108,7 +108,7 @@ Section 1 (lines 1–~673)
   Style:   var declarations, ES5
   Constants: WINDOW_GRID_KDE_SERVICE, WINDOW_GRID_KDE_PATH, WINDOW_GRID_KDE_INTERFACE
   Polls:   WaitForMoveRequest
-  Registers: right-click context menu (registerUserActionsMenu)
+  Registers: right-click context menu (registerUserActionsMenu), Meta+P shortcut (registerShortcut → ToggleWindow)
 
 Section 2 (lines ~674–end)
   Purpose: bulk desktop move + geometry restore
@@ -154,6 +154,7 @@ WaitForMoveRequest                        KWin poll   (none)                    
 WaitForCurrentDesktopMoveRequest          KWin poll   (none)                         [targetActivityId,targetDesktopId,requestId]
 TriggerRestoreLayout                      Electron    (none)                         void
 WaitForRestoreLayoutRequest               KWin poll   (none)                         requestId
+ToggleWindow                              KWin        (none)                         void
 ```
 
 SelectWindow is the exception — KWin calls it then the helper HTTP POSTs to Electron (not the

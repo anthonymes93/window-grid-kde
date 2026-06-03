@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('kde', {
   moveWindowToActivityOnly: (windowId: string, activityId: string) =>
     ipcRenderer.invoke('kde:moveWindowToActivityOnly', windowId, activityId),
   restoreLastLayout: () => ipcRenderer.invoke('kde:restoreLastLayout'),
+  hideWindow: () => ipcRenderer.invoke('kde:hideWindow'),
   onSelectedWindowFromKwin: (callback: (windowInfo: unknown) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, windowInfo: unknown): void => {
       callback(windowInfo);

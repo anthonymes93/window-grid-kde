@@ -220,7 +220,33 @@ app.on('open-url', (event, rawUrl) => {
   handleProtocolUrl(rawUrl);
 });
 
+const hideWindow = (): void => {
+  const [mainWindow] = BrowserWindow.getAllWindows();
+  if (!mainWindow) return;
+  mainWindow.setFullScreen(false);
+  mainWindow.hide();
+};
+
+const toggleWindow = (): void => {
+  const [mainWindow] = BrowserWindow.getAllWindows();
+  if (!mainWindow) return;
+
+  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+    hideWindow();
+  } else {
+    mainWindow.show();
+    mainWindow.setFullScreen(true);
+    mainWindow.focus();
+  }
+};
+
 const kwinBridgeServer = createServer((request, response) => {
+  if (request.method === 'POST' && request.url === '/toggle') {
+    toggleWindow();
+    sendJson(response, 200, { ok: true });
+    return;
+  }
+
   if (request.method !== 'POST' || request.url !== '/kwin/window') {
     sendJson(response, 404, { ok: false, error: 'Not found.' });
     return;
@@ -599,6 +625,7 @@ const moveCurrentDesktopToActivityAndDesktop = async (
   );
 };
 
+ipcMain.handle('kde:hideWindow', () => hideWindow());
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());

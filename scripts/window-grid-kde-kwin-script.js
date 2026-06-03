@@ -689,6 +689,21 @@ registerUserActionsMenu(function(window) {
     };
 });
 
+registerShortcut(
+    "window-grid-kde-toggle",
+    "Window Grid KDE: Toggle Window",
+    "Meta+S",
+    function() {
+        callDBus(
+            WINDOW_GRID_KDE_SERVICE,
+            WINDOW_GRID_KDE_PATH,
+            WINDOW_GRID_KDE_INTERFACE,
+            "ToggleWindow",
+            function() {}
+        );
+    }
+);
+
 print("Window Grid KDE: [SECTION 1] init complete, calling waitForMoveRequests at t=" + Date.now());
 waitForMoveRequests();
 

@@ -189,6 +189,7 @@ export function App(): JSX.Element {
         `✓ Moved "${storedWindow.title}" and switched → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current
       ]);
+      void window.kde.hideWindow();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setEventLog((current) => [`✗ Move + switch failed: ${message}`, ...current]);
@@ -268,6 +269,7 @@ export function App(): JSX.Element {
         `✓ Desktop moved → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current
       ]);
+      void window.kde.hideWindow();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setEventLog((current) => [`✗ Desktop move failed: ${message}`, ...current]);

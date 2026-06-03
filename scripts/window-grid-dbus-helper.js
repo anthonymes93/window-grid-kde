@@ -242,6 +242,10 @@ class WindowGridKDEInterface extends Interface {
     });
   }
 
+  async ToggleWindow() {
+    await fetch('http://127.0.0.1:48745/toggle', { method: 'POST' });
+  }
+
   TriggerRestoreLayout() {
     const requestId = String(++requestIdCounter);
     console.log('[Window Grid DBus Helper] TriggerRestoreLayout called:', { requestId });
@@ -435,6 +439,17 @@ const waitForCurrentDesktopMoveDescriptor = method({ inSignature: '', outSignatu
 
 waitForCurrentDesktopMoveDescriptor.finisher(WindowGridKDEInterface);
 
+const toggleWindowDescriptor = method({ inSignature: '', outSignature: '' })({
+  kind: 'method',
+  key: 'ToggleWindow',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'ToggleWindow'
+  )
+});
+
+toggleWindowDescriptor.finisher(WindowGridKDEInterface);
+
 const triggerRestoreLayoutDescriptor = method({ inSignature: '', outSignature: '' })({
   kind: 'method',
   key: 'TriggerRestoreLayout',
@@ -506,6 +521,7 @@ try {
       'Sleep(string requestId, string windowId, string delayMs) -> (string requestId, string windowId)',
       'WaitForMoveRequest() -> (string windowId, string activityId, string desktopId, string requestId)',
       'WaitForCurrentDesktopMoveRequest() -> (string targetActivityId, string targetDesktopId, string requestId)',
+      'ToggleWindow()',
       'TriggerRestoreLayout()',
       'WaitForRestoreLayoutRequest() -> (string requestId)'
     ]

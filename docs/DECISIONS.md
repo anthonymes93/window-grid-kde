@@ -198,3 +198,21 @@ cycle. `kwin reconfigure` — does not re-execute the script context.
 
 **How to apply:** `npm run deploy:kwin` is the only way to deploy. Do not call
 `deploy-kwin-script.sh` directly for qdbus6 operations; use it only as a file-copy tool if needed.
+
+## DEC-015: Global Hotkey via KWin registerShortcut + DBus ToggleWindow
+
+**Decision:** Registered `Meta+S` using KWin's `registerShortcut()` API inside the KWin script
+(Section 1). The callback calls `ToggleWindow` on the DBus service. The DBus helper forwards the
+call to Electron via HTTP POST to `/toggle`. Electron hides the window if visible, or shows it
+fullscreen if hidden.
+
+**Reason:** Electron's `globalShortcut` API on Wayland requires the XDG `GlobalShortcuts` portal
+with a user-confirmation handshake. KWin's `registerShortcut()` is compositor-native and works
+reliably on Wayland without any portal negotiation. The shortcut also appears in KDE System
+Settings → Shortcuts → KWin Scripts where the user can rebind it.
+
+**Alternative rejected:** `globalShortcut.register('Super+P', ...)` in Electron main — unreliable
+on Wayland; requires portal setup and user interaction.
+
+**How to apply:** After changing the shortcut default key, run `npm run deploy:kwin`. The user can
+rebind in System Settings → Shortcuts → KWin Scripts → "Window Grid KDE: Toggle Window".
