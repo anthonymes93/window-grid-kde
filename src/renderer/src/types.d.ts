@@ -38,6 +38,7 @@ declare global {
       ) => Promise<void>;
       switchToActivity: (activityId: string) => Promise<void>;
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
+      restoreLastLayout: () => Promise<void>;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };
   }

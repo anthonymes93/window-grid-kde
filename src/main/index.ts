@@ -557,6 +557,18 @@ const moveWindowToActivityAndDesktop = async (
   console.log('[Electron] AFTER MoveWindowToActivityAndDesktop: move DELIVERED to KWin (qdbus6 returned)');
 };
 
+const triggerRestoreLayout = async (): Promise<void> => {
+  console.log('[Electron] BEFORE TriggerRestoreLayout');
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.TriggerRestoreLayout'
+  ]);
+
+  console.log('[Electron] AFTER TriggerRestoreLayout');
+};
+
 const moveCurrentDesktopToActivityAndDesktop = async (
   targetActivityId: string,
   targetDesktopId: string
@@ -626,6 +638,11 @@ ipcMain.handle(
     return moveWindowToActivityAndDesktop(windowId, activityId, desktopId);
   }
 );
+ipcMain.handle('kde:restoreLastLayout', async () => {
+  console.log('IPC kde:restoreLastLayout received');
+  return triggerRestoreLayout();
+});
+
 ipcMain.handle(
   'kde:moveCurrentDesktopToActivityAndDesktop',
   async (_event, targetActivityId: string, targetDesktopId: string) => {

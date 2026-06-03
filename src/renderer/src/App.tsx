@@ -33,6 +33,7 @@ export function App(): JSX.Element {
   const [isMoveAndSwitching, setIsMoveAndSwitching] = useState(false);
   const [isMovingActivityOnly, setIsMovingActivityOnly] = useState(false);
   const [isMovingCurrentDesktop, setIsMovingCurrentDesktop] = useState(false);
+  const [isRestoringLayout, setIsRestoringLayout] = useState(false);
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>(['UI shell initialized.']);
 
@@ -500,6 +501,23 @@ export function App(): JSX.Element {
     !isMoveAndSwitching &&
     !isMovingWindow;
 
+  const handleRestoreLastLayout = async (): Promise<void> => {
+    setIsRestoringLayout(true);
+    setEventLog((current) => ['[RESTORE LAYOUT] Triggering restore...', ...current]);
+
+    try {
+      await window.kde.restoreLastLayout();
+      setEventLog((current) => ['[RESTORE LAYOUT] Triggered.', ...current]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error.';
+      setEventLog((current) => [`[RESTORE LAYOUT] Failed: ${message}`, ...current]);
+    } finally {
+      setIsRestoringLayout(false);
+    }
+  };
+
+  const canRestoreLayout = !isRestoringLayout && !isMovingCurrentDesktop;
+
   const currentActivity = activities.find((a) => a.id === currentActivityId) ?? null;
   const selectedActivity = selection?.activity ?? null;
 
@@ -698,6 +716,16 @@ export function App(): JSX.Element {
                   disabled={!canMoveCurrentDesktop}
                 >
                   Move Current Desktop
+                </button>
+
+                <button
+                  className="refresh-button"
+                  type="button"
+                  data-loading={String(isRestoringLayout)}
+                  onClick={() => void handleRestoreLastLayout()}
+                  disabled={!canRestoreLayout}
+                >
+                  Restore Last Layout
                 </button>
               </div>
             </div>

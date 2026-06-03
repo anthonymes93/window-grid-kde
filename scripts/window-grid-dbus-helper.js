@@ -13,6 +13,8 @@ const pendingMoveRequests = [];
 const pendingMoveWaiters = [];
 const pendingCurrentDesktopMoveRequests = [];
 const pendingCurrentDesktopMoveWaiters = [];
+const pendingRestoreRequests = [];
+const pendingRestoreWaiters = [];
 let requestIdCounter = 0;
 
 const toDesktopIds = (desktopIdsCsv) =>
@@ -70,6 +72,16 @@ console.log(
       moveRequest.desktopId,
       moveRequest.requestId
     ]);
+  }
+};
+
+const notifyRestoreWaiters = () => {
+  while (pendingRestoreRequests.length > 0 && pendingRestoreWaiters.length > 0) {
+    const request = pendingRestoreRequests.shift();
+    const waiter = pendingRestoreWaiters.shift();
+    clearTimeout(waiter.timeoutId);
+    console.log(`[Window Grid DBus Helper] DELIVERED restore requestId=${request.requestId} to KWin`);
+    waiter.resolve(request.requestId);
   }
 };
 
@@ -227,6 +239,36 @@ class WindowGridKDEInterface extends Interface {
         pendingCurrentDesktopMoveRequests.length
       );
       notifyCurrentDesktopMoveWaiters();
+    });
+  }
+
+  TriggerRestoreLayout() {
+    const requestId = String(++requestIdCounter);
+    console.log('[Window Grid DBus Helper] TriggerRestoreLayout called:', { requestId });
+    pendingRestoreRequests.push({ requestId });
+    notifyRestoreWaiters();
+  }
+
+  WaitForRestoreLayoutRequest() {
+    if (pendingRestoreRequests.length > 0) {
+      const request = pendingRestoreRequests.shift();
+      console.log(`[Window Grid DBus Helper] DELIVERED restore requestId=${request.requestId} to KWin immediately`);
+      return request.requestId;
+    }
+
+    return new Promise((resolve) => {
+      const waiter = { resolve, timeoutId: null };
+
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingRestoreWaiters.indexOf(waiter);
+        if (idx >= 0) {
+          pendingRestoreWaiters.splice(idx, 1);
+        }
+        console.log('[Window Grid DBus Helper] WaitForRestoreLayoutRequest heartbeat timeout');
+        resolve('');
+      }, 8000);
+
+      pendingRestoreWaiters.push(waiter);
     });
   }
 
@@ -393,6 +435,28 @@ const waitForCurrentDesktopMoveDescriptor = method({ inSignature: '', outSignatu
 
 waitForCurrentDesktopMoveDescriptor.finisher(WindowGridKDEInterface);
 
+const triggerRestoreLayoutDescriptor = method({ inSignature: '', outSignature: '' })({
+  kind: 'method',
+  key: 'TriggerRestoreLayout',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'TriggerRestoreLayout'
+  )
+});
+
+triggerRestoreLayoutDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForRestoreLayoutDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'WaitForRestoreLayoutRequest',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'WaitForRestoreLayoutRequest'
+  )
+});
+
+waitForRestoreLayoutDescriptor.finisher(WindowGridKDEInterface);
+
 const sleepDescriptor = method({ inSignature: 'sss', outSignature: 'ss' })({
   kind: 'method',
   key: 'Sleep',
@@ -441,7 +505,9 @@ try {
       'MoveCurrentDesktopToActivityAndDesktop(string targetActivityId, string targetDesktopId)',
       'Sleep(string requestId, string windowId, string delayMs) -> (string requestId, string windowId)',
       'WaitForMoveRequest() -> (string windowId, string activityId, string desktopId, string requestId)',
-      'WaitForCurrentDesktopMoveRequest() -> (string targetActivityId, string targetDesktopId, string requestId)'
+      'WaitForCurrentDesktopMoveRequest() -> (string targetActivityId, string targetDesktopId, string requestId)',
+      'TriggerRestoreLayout()',
+      'WaitForRestoreLayoutRequest() -> (string requestId)'
     ]
   });
 } catch (error) {

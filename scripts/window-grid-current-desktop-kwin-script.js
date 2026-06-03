@@ -230,6 +230,8 @@ for (const window of allWindows) {
     " | activities=" + JSON.stringify(window.activities)
   );
 }
+let lastBulkMoveLayout = null;
+
 function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) {
   if (!targetActivityId || !targetDesktopId) {
     return;
@@ -298,10 +300,58 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
   log('');
   log('Moving:');
 
+  lastBulkMoveLayout = [];
   for (const window of matchingWindows) {
-    log(`* ${getCaption(window)}`);
+    const caption = getCaption(window);
+    const geo = window.frameGeometry;
+    const savedGeo = geo
+      ? { x: geo.x, y: geo.y, width: geo.width, height: geo.height }
+      : null;
+    const maximizeMode = window.maximizeMode !== undefined ? window.maximizeMode : '(unavailable)';
+    const fullScreen = window.fullScreen !== undefined
+      ? Boolean(window.fullScreen)
+      : (window.fullscreen !== undefined ? Boolean(window.fullscreen) : '(unavailable)');
+    const isMaximized = (typeof maximizeMode === 'number' && maximizeMode !== 0) || maximizeMode === true;
+    const isFullScreen = fullScreen === true;
+
+    log(
+      '[GEOMETRY BEFORE] caption="' + caption + '"' +
+      ' | x=' + (savedGeo ? savedGeo.x : '?') +
+      ' | y=' + (savedGeo ? savedGeo.y : '?') +
+      ' | width=' + (savedGeo ? savedGeo.width : '?') +
+      ' | height=' + (savedGeo ? savedGeo.height : '?')
+    );
+
+    {
+      let _outName = '(unavailable)';
+      let _screen = '(unavailable)';
+      let _dpr = '(unavailable)';
+      let _bufGeo = '(unavailable)';
+      try { const o = window.output; if (o) { _outName = String(o.name !== undefined ? o.name : o); _dpr = o.devicePixelRatio !== undefined ? String(o.devicePixelRatio) : (o.scale !== undefined ? String(o.scale) : '(unavailable)'); } } catch (e) { _outName = 'ERR:' + e; }
+      try { if (window.screen !== undefined) _screen = String(window.screen); } catch (e) { _screen = 'ERR:' + e; }
+      try { const bg = window.bufferGeometry; _bufGeo = bg ? (bg.x + ',' + bg.y + ',' + bg.width + ',' + bg.height) : '(null)'; } catch (e) {}
+      log('[MONITOR SAVE] caption="' + caption + '" | output=' + _outName + ' | screen=' + _screen + ' | devicePixelRatio=' + _dpr + ' | frameGeo=' + (savedGeo ? savedGeo.x + ',' + savedGeo.y + ',' + savedGeo.width + ',' + savedGeo.height : '(null)') + ' | bufferGeo=' + _bufGeo);
+    }
+
+    {
+      let _fs = '?', _mm = '?', _tm = '?', _min = '?', _ka = '?', _kb = '?';
+      try { _fs = String(window.fullScreen !== undefined ? window.fullScreen : (window.fullscreen !== undefined ? window.fullscreen : '(unavailable)')); } catch(e) {}
+      try { _mm = window.maximizeMode !== undefined ? String(window.maximizeMode) : '(unavailable)'; } catch(e) {}
+      try { _tm = window.quickTileMode !== undefined ? String(window.quickTileMode) : '(unavailable)'; } catch(e) {}
+      try { _min = window.minimized !== undefined ? String(window.minimized) : '(unavailable)'; } catch(e) {}
+      try { _ka = window.keepAbove !== undefined ? String(window.keepAbove) : '(unavailable)'; } catch(e) {}
+      try { _kb = window.keepBelow !== undefined ? String(window.keepBelow) : '(unavailable)'; } catch(e) {}
+      log('[STATE SAVE] caption="' + caption + '" | fullScreen=' + _fs + ' | maximizeMode=' + _mm + ' | quickTileMode=' + _tm + ' | minimized=' + _min + ' | keepAbove=' + _ka + ' | keepBelow=' + _kb);
+    }
+
+    log(`* ${caption}`);
     moveWindowToActivityAndDesktop(window, targetActivityId, targetDesktopId);
+
+    if (savedGeo && !isMaximized && !isFullScreen) {
+      lastBulkMoveLayout.push({ window, caption, x: savedGeo.x, y: savedGeo.y, width: savedGeo.width, height: savedGeo.height });
+    }
   }
+  log('lastBulkMoveLayout saved: ' + lastBulkMoveLayout.length + ' windows');
 
   log(`MoveCurrentDesktopToActivityAndDesktop complete: requestId=${requestId}`);
 }
@@ -324,5 +374,71 @@ function waitForCurrentDesktopMoveRequest() {
   );
 }
 
+function waitForRestoreLayoutRequest() {
+  log('waiting for restore layout request');
+  callDBus(
+    SERVICE_NAME,
+    OBJECT_PATH,
+    INTERFACE_NAME,
+    'WaitForRestoreLayoutRequest',
+    function(requestId) {
+      log('restore layout request received | requestId=' + requestId + ' | lastBulkMoveLayout length=' + (lastBulkMoveLayout ? lastBulkMoveLayout.length : 'null'));
+      if (requestId) {
+        if (lastBulkMoveLayout && lastBulkMoveLayout.length > 0) {
+          log('RestoreLastLayout: lastBulkMoveLayout length=' + lastBulkMoveLayout.length);
+          for (let i = 0; i < lastBulkMoveLayout.length; i++) {
+            const entry = lastBulkMoveLayout[i];
+            let windowExists = false;
+            try { windowExists = Boolean(entry.window && entry.window.frameGeometry); } catch (e) {}
+            log(
+              'RestoreLastLayout window[' + i + ']' +
+              ' | caption="' + entry.caption + '"' +
+              ' | windowExists=' + windowExists +
+              ' | savedGeo=' + entry.x + ',' + entry.y + ',' + entry.width + ',' + entry.height
+            );
+            {
+              let _outName = '(unavailable)';
+              let _screen = '(unavailable)';
+              let _dpr = '(unavailable)';
+              let _bufGeo = '(unavailable)';
+              let _frameGeo = '(unavailable)';
+              try { const o = entry.window.output; if (o) { _outName = String(o.name !== undefined ? o.name : o); _dpr = o.devicePixelRatio !== undefined ? String(o.devicePixelRatio) : (o.scale !== undefined ? String(o.scale) : '(unavailable)'); } } catch (e) { _outName = 'ERR:' + e; }
+              try { if (entry.window.screen !== undefined) _screen = String(entry.window.screen); } catch (e) { _screen = 'ERR:' + e; }
+              try { const bg = entry.window.bufferGeometry; _bufGeo = bg ? (bg.x + ',' + bg.y + ',' + bg.width + ',' + bg.height) : '(null)'; } catch (e) {}
+              try { const fg = entry.window.frameGeometry; _frameGeo = fg ? (fg.x + ',' + fg.y + ',' + fg.width + ',' + fg.height) : '(null)'; } catch (e) {}
+              log('[MONITOR RESTORE] caption="' + entry.caption + '" | output=' + _outName + ' | screen=' + _screen + ' | devicePixelRatio=' + _dpr + ' | frameGeo=' + _frameGeo + ' | bufferGeo=' + _bufGeo + ' | savedGeo=' + entry.x + ',' + entry.y + ',' + entry.width + ',' + entry.height);
+            }
+            {
+              let _fs = '?', _mm = '?', _tm = '?', _min = '?', _ka = '?', _kb = '?';
+              try { _fs = String(entry.window.fullScreen !== undefined ? entry.window.fullScreen : (entry.window.fullscreen !== undefined ? entry.window.fullscreen : '(unavailable)')); } catch(e) {}
+              try { _mm = entry.window.maximizeMode !== undefined ? String(entry.window.maximizeMode) : '(unavailable)'; } catch(e) {}
+              try { _tm = entry.window.quickTileMode !== undefined ? String(entry.window.quickTileMode) : '(unavailable)'; } catch(e) {}
+              try { _min = entry.window.minimized !== undefined ? String(entry.window.minimized) : '(unavailable)'; } catch(e) {}
+              try { _ka = entry.window.keepAbove !== undefined ? String(entry.window.keepAbove) : '(unavailable)'; } catch(e) {}
+              try { _kb = entry.window.keepBelow !== undefined ? String(entry.window.keepBelow) : '(unavailable)'; } catch(e) {}
+              log('[STATE RESTORE] caption="' + entry.caption + '" | fullScreen=' + _fs + ' | maximizeMode=' + _mm + ' | quickTileMode=' + _tm + ' | minimized=' + _min + ' | keepAbove=' + _ka + ' | keepBelow=' + _kb);
+            }
+            try {
+              log('[RESTORE APPLY] caption="' + entry.caption + '" | x=' + entry.x + ' | y=' + entry.y + ' | width=' + entry.width + ' | height=' + entry.height);
+              entry.window.frameGeometry = { x: entry.x, y: entry.y, width: entry.width, height: entry.height };
+              const geoApplied = entry.window.frameGeometry;
+              log('[RESTORE APPLIED] caption="' + entry.caption + '" | x=' + (geoApplied ? geoApplied.x : '?') + ' | y=' + (geoApplied ? geoApplied.y : '?') + ' | width=' + (geoApplied ? geoApplied.width : '?') + ' | height=' + (geoApplied ? geoApplied.height : '?'));
+              const geoResult = entry.window.frameGeometry;
+              log('[RESTORE RESULT] caption="' + entry.caption + '" | x=' + (geoResult ? geoResult.x : '?') + ' | y=' + (geoResult ? geoResult.y : '?') + ' | width=' + (geoResult ? geoResult.width : '?') + ' | height=' + (geoResult ? geoResult.height : '?'));
+            } catch (e) {
+              log('[RESTORE APPLY] caption="' + entry.caption + '" | ERROR: ' + e);
+            }
+          }
+        } else {
+          log('RestoreLastLayout: no layout saved');
+        }
+      }
+      waitForRestoreLayoutRequest();
+    }
+  );
+}
+
 log('Current desktop move script loaded');
+log('Restore layout listener started');
 waitForCurrentDesktopMoveRequest();
+waitForRestoreLayoutRequest();
