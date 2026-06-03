@@ -15,6 +15,73 @@ Never delete entries — they are the project's empirical history.
 
 ---
 
+## 2026-06-03 — BUG-001 investigation: delivery timeout root cause
+
+**Hypothesis / Question:** Why does `WaitForCurrentDesktopMoveRequest` in the DBus helper never
+receive a waiter from KWin, causing every Move Current Desktop request to time out?
+
+**Evidence from fresh run:**
+- Electron IPC invoked: confirmed
+- `MoveCurrentDesktopToActivityAndDesktop` arrives at DBus helper: confirmed
+- Request enters `pendingCurrentDesktopMoveRequests[]`: confirmed (queue length logged as 1)
+- After 10 seconds: helper logs `TIMEOUT: requestId=1 not delivered within 10s`
+- KWin never consumed the queued request
+
+**What this proves:**
+- The entire Electron → DBus helper path is working correctly
+- The bug is exclusively on the KWin side: KWin is not calling `WaitForCurrentDesktopMoveRequest`
+
+**What is still unproven:**
+1. Whether Section 2's top-level code executes at all in KWin (does `[SECTION 2] loaded at t=...` appear in journal?)
+2. Whether `waitForCurrentDesktopMoveRequest()` is reached (does `[SECTION 2] init: starting polling loops` appear?)
+3. Whether `callDBus` for `WaitForCurrentDesktopMoveRequest` is sent (does `[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent` appear?)
+4. Whether the callback ever fires (does `[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired` appear?)
+5. Whether the timing between Section 1 callDBus completing and Section 2 callDBus starting suggests serialization (H4)
+
+**H1 (duplicate findDesktopById) RULED OUT for KWin context:**
+- `node --check` throws `SyntaxError: Identifier 'findDesktopById' has already been declared`
+  at the second definition (line 841 in the combined script)
+- Investigation revealed this is a **false positive**: the project `package.json` declares
+  `"type": "module"`, which causes Node.js to parse ALL `.js` files in the directory as ES modules.
+  In ES module (strict) mode, duplicate `function` declarations ARE a SyntaxError.
+- KWin's JS engine does NOT run KWin scripts as ES modules — it uses a plain sloppy-mode script
+  context. In sloppy mode, duplicate `function` declarations are valid (last one wins, no error).
+- Confirmed by: `node --check /tmp/test_exact_copy.js` (identical file, no package.json ancestor)
+  exits 0 (no error).
+- Section 2 also passes `node --check` in isolation.
+- **H1 is not the cause.**
+
+**Instrumentation added (this session):**
+All probes output millisecond timestamps via `Date.now()` to allow timing analysis:
+- `[SECTION 1] init complete, calling waitForMoveRequests at t=<ms>` (before Section 1's initial callDBus)
+- `[SECTION 2] loaded at t=<ms>` (first line of Section 2 top-level execution)
+- `[SECTION 2] init: starting polling loops at t=<ms>` (just before first callDBus calls)
+- `[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent at t=<ms>` (at each callDBus)
+- `[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired at t=<ms> activityId= desktopId= requestId=` (at each callback)
+- `[SECTION 2] WaitForRestoreLayoutRequest: callDBus sent at t=<ms>` (new — previously unlogged)
+- `[SECTION 2] WaitForRestoreLayoutRequest: callback fired at t=<ms>` (new — previously unlogged)
+
+**Diagnostic to run next:**
+Stream KWin logs during a fresh `npm run dev`, wait 30 seconds, then trigger Move Current Desktop:
+```bash
+journalctl -f | grep "Window Grid KDE"
+```
+Also check terminal output of `npm run dev` for DBus helper line:
+```
+[Window Grid DBus Helper] KWin waiting for next current desktop move request.
+```
+If this helper line NEVER appears, KWin's `WaitForCurrentDesktopMoveRequest` callDBus is either
+not being sent or not reaching the helper.
+
+**How to interpret the timestamps (H4 test):**
+- If `[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent` appears at a time close to
+  `[SECTION 1] init complete` (within ~1s), callDBus calls are NOT serialized → H4 is wrong
+- If `[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent` appears ~8s AFTER
+  `[SECTION 1] init complete` (or after the first `WaitForMoveRequest` callback), callDBus calls
+  to the same service ARE serialized → H4 is the cause
+
+---
+
 ## 2026-06-03 — Diagnostic cleanup after geometry restore confirmed working
 
 **Hypothesis:** The 2-second auto-restore is sufficient; no additional retries needed.  

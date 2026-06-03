@@ -8,6 +8,8 @@ function log(message) {
   console.log(`Window Grid KDE: ${message}`);
 }
 
+log('[SECTION 2] loaded at t=' + Date.now());
+
 function getWorkspaceWindows() {
   if (typeof workspace.windowList === 'function') {
     return workspace.windowList();
@@ -285,12 +287,15 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
 }
 
 function waitForCurrentDesktopMoveRequest() {
+  log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent at t=' + Date.now());
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForCurrentDesktopMoveRequest',
     function (targetActivityId, targetDesktopId, requestId) {
+      log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired at t=' + Date.now() + ' activityId=' + targetActivityId + ' desktopId=' + targetDesktopId + ' requestId=' + requestId);
       try {
         handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId);
       } catch (error) {
@@ -316,12 +321,15 @@ function runRestoreLayout() {
 }
 
 function waitForRestoreLayoutRequest() {
+  log('[SECTION 2] WaitForRestoreLayoutRequest: callDBus sent at t=' + Date.now());
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForRestoreLayoutRequest',
     function(requestId) {
+      log('[SECTION 2] WaitForRestoreLayoutRequest: callback fired at t=' + Date.now() + ' requestId=' + requestId);
       if (requestId) {
         runRestoreLayout();
       }
@@ -330,5 +338,6 @@ function waitForRestoreLayoutRequest() {
   );
 }
 
+log('[SECTION 2] init: starting polling loops at t=' + Date.now());
 waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();

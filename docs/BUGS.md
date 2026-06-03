@@ -24,54 +24,63 @@ When fixing a bug: move it from ACTIVE to RESOLVED, fill in the fix, and append 
 7. No windows are moved; event log shows timeout error
 
 #### Confirmed Working
-- Electron → DBus helper: ✅ (`TriggerRestoreLayout called` log appears)
-- DBus helper queuing: ✅ (request enters queue)
+- Electron → DBus helper: ✅ (fresh run: request queued, queue length logged as 1)
+- DBus helper queuing: ✅ (fresh run: `pendingCurrentDesktopMoveRequests` populated)
 - KWin script loads: ✅ (startup logs visible)
 - Section 1 (single window moves): ✅ (works independently)
 
+#### Confirmed NOT Working
+- KWin → DBus helper for `WaitForCurrentDesktopMoveRequest`: ✗ (fresh run: delivery timeout fires
+  at 10s, no KWin waiter consumed the queued request)
+
 #### Not Yet Confirmed
-- Whether KWin's `waitForCurrentDesktopMoveRequest()` actually calls `callDBus` successfully
-- Whether any JS errors occur in Section 2 at script load time
-- Whether Section 2's polling loop registers a waiter in `pendingCurrentDesktopMoveWaiters`
+- Whether Section 2's top-level code executes at all (`[SECTION 2] loaded at t=` probe pending)
+- Whether `waitForCurrentDesktopMoveRequest()` is reached (`[SECTION 2] init: starting polling loops` probe pending)
+- Whether KWin's `callDBus` for `WaitForCurrentDesktopMoveRequest` reaches the helper (look for
+  `[Window Grid DBus Helper] KWin waiting for next current desktop move request.` in terminal)
+- Whether the callback ever fires (`[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired` probe pending)
+- Whether callDBus calls are serialized (timestamps from probes will show H4)
 
 #### Hypotheses (ranked by likelihood)
 
-**H1 — Section 2 initialization failure:**
-A JS error in the combined script prevents Section 2 from starting. `findDesktopById` is
-defined twice (in Section 1 and Section 2). In some JS environments, function hoisting of two
-`function findDesktopById` declarations causes a parse error, not just shadowing. If Section 2
-fails to initialize, `waitForCurrentDesktopMoveRequest()` is never called, so no waiter is
-registered in the DBus helper. Section 1 continues working, which masks the failure.
+**H1 — Section 2 initialization failure (RULED OUT for KWin context):**
+`node --check` threw `SyntaxError: Identifier 'findDesktopById' has already been declared` on the
+combined script. Investigation showed this is a **false positive**: the project `package.json` has
+`"type": "module"`, causing Node.js to parse `.js` files as ES modules (strict mode). In module
+strict mode, duplicate `function` declarations ARE a SyntaxError. But KWin's JS engine runs the
+file as a plain sloppy-mode script, where duplicate `function` declarations are allowed (last wins).
+Confirmed: the same file passes `node --check` when placed outside the package.json scope.
 
-**H2 — `const` parsing in combined file:**
-Section 2 uses `const SERVICE_NAME = '...'` at module level. If KWin's JS engine encounters
-a problem with top-level `const` in a very large file (Section 2 starts ~line 674), the
-definitions might not be accessible. The `callDBus(SERVICE_NAME, ...)` call would then fail
-with a ReferenceError.
+**H2 — `const` parsing in combined file (LOW — no evidence):**
+Section 2 uses `const SERVICE_NAME = '...'` at the top level. Sloppy-mode V8 handles top-level
+`const` fine. No evidence this causes issues. Deprioritized unless probes show a ReferenceError.
 
-**H3 — Race at 8s heartbeat:**
-KWin's `WaitForCurrentDesktopMoveRequest` callDBus resolves after 8s heartbeat timeout.
-Between the heartbeat resolving and the recursive `waitForCurrentDesktopMoveRequest()` call
-re-registering, there is a ~0ms gap. If the move request arrives in this gap, `notifyWaiters()`
-finds no waiters. The new `WaitForCurrentDesktopMoveRequest` call SHOULD pick it up via the
-`if (pendingCurrentDesktopMoveRequests.length > 0)` fast path — but only if the new callDBus
-call reaches the helper before the 10s delivery timeout on the original request. Given the
-10s timeout and 8s heartbeat, there should be ~2s margin. This should work in theory.
+**H3 — Race at 8s heartbeat (LOW — fast-path handles it):**
+The DBus helper has a fast-path in `WaitForCurrentDesktopMoveRequest`: if a pending request exists
+when KWin re-arms, it is delivered immediately (no 10s wait needed). The 10s timeout and 8s
+heartbeat leave ~2s margin. This should work unless Section 2 never registers a waiter at all.
 
-**H4 — callDBus concurrency in KWin:**
-Both polling loops in the combined script call `callDBus` on the same interface simultaneously
-(Section 1 polls `WaitForMoveRequest`, Section 2 polls `WaitForCurrentDesktopMoveRequest`).
-If KWin serializes callDBus calls on the same service/interface, Section 2's call might queue
-behind Section 1's, effectively never registering its waiter during the 10s delivery window.
+**H4 — callDBus serialization in KWin (PRIMARY HYPOTHESIS):**
+Section 1 (`WaitForMoveRequest`), Section 2 (`WaitForCurrentDesktopMoveRequest`), and Section 2
+(`WaitForRestoreLayoutRequest`) all call `callDBus` on the same DBus service simultaneously at
+script startup. If KWin serializes `callDBus` calls to the same service, Section 2's calls queue
+behind Section 1's 8s heartbeat call. Delivery would be delayed by 8+ seconds per cycle. Since
+Section 2's callDBus is never in the helper when the user triggers a move (helper has no waiter),
+the 10s delivery timeout fires before Section 2's callDBus arrives.
+**To confirm:** timestamps on probe logs. If `[SECTION 2] WaitForCurrentDesktopMoveRequest:
+callDBus sent` appears ~8s after `[SECTION 1] init complete`, H4 is confirmed.
 
-#### Investigation Steps (do these first)
-- [ ] Run `journalctl -n 100 | grep -iE "Window Grid KDE|kwin_scripting|js.*error"` immediately
-  after deploying the script to check for parse or runtime errors in Section 2
-- [ ] Add `log('Section 2 polling started')` at the very top of `waitForCurrentDesktopMoveRequest()`
-  and `log('callDBus WaitForCurrentDesktopMoveRequest called')` immediately before the callDBus
-  call — redeploy and check if these appear
-- [ ] Check `qdbus6 | grep anthony` while app is running to confirm helper is registered
-- [ ] Test H1: Rename one `findDesktopById` to `findDesktopByIdBulk` in Section 2 and redeploy
+#### Investigation Steps
+- [x] Check for parse/runtime errors in Section 2 via `journalctl`
+- [x] Add Section 2 init probes (`[SECTION 2] loaded`, `polling started`, `callDBus sent`, `callback fired`)
+- [x] Confirm DBus helper is registered (`qdbus6 | grep anthony`)
+- [x] Add timestamps to all probes to detect H4 (callDBus serialization)
+- [x] Add probes to `waitForRestoreLayoutRequest()` (previously unlogged)
+- [ ] **Run fresh session, check KWin journal for `[SECTION 2]` markers and their timestamps**
+- [ ] **Check terminal output of `npm run dev` for `KWin waiting for next current desktop move request`**
+- [ ] **If H4 confirmed:** fix by testing whether Section 1 and Section 2 callDBus calls can be
+      isolated (e.g., by adding a small delay before Section 2's first callDBus, or by using a
+      different service name for the combined script's polling calls)
 
 #### Key Files
 - `scripts/window-grid-kde-kwin-script.js:674+` — Section 2 start, `waitForCurrentDesktopMoveRequest`
