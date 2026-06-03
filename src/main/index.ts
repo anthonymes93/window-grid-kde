@@ -236,6 +236,7 @@ const createItWorksWindow = (): void => {
     e.preventDefault();
     itWorksWindow?.hide();
   });
+  void pinToAllActivities(itWorksWindow);
 };
 
 const toggleItWorksWindow = (): void => {
@@ -254,7 +255,6 @@ const toggleItWorksWindow = (): void => {
   itWorksWindow.show();
   itWorksWindow.maximize();
   itWorksWindow.focus();
-  void pinToAllActivities(itWorksWindow);
 };
 
 const hideWindow = (): void => {
@@ -284,6 +284,7 @@ const toggleWindow = async (): Promise<void> => {
     hideWindow();
   } else {
     await pinToAllActivities(mainWindowRef);
+    mainWindowRef.setAlwaysOnTop(true, 'screen-saver');
     mainWindowRef.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mainWindowRef.show();
     mainWindowRef.maximize();
