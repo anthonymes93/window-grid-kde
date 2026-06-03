@@ -39,6 +39,7 @@ declare global {
       switchToActivity: (activityId: string) => Promise<void>;
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       restoreLastLayout: () => Promise<void>;
+      closeAllOnCurrentDesktop: () => Promise<void>;
       hideWindow: () => Promise<void>;
       getWindowCounts: () => Promise<Record<string, number>>;
       requestWindowCounts: () => Promise<void>;

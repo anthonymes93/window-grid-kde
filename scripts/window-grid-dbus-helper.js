@@ -16,6 +16,8 @@ const pendingCurrentDesktopMoveRequests = [];
 const pendingCurrentDesktopMoveWaiters = [];
 const pendingRestoreRequests = [];
 const pendingRestoreWaiters = [];
+const pendingCloseAllRequests = [];
+const pendingCloseAllWaiters = [];
 const pendingWindowCountsRequests = [];
 const pendingWindowCountsWaiters = [];
 let requestIdCounter = 0;
@@ -341,6 +343,35 @@ class WindowGridKDEInterface extends Interface {
     });
   }
 
+  TriggerCloseAll() {
+    const requestId = String(++requestIdCounter);
+    console.log('[Window Grid DBus Helper] TriggerCloseAll called:', { requestId });
+    if (pendingCloseAllWaiters.length > 0) {
+      const waiter = pendingCloseAllWaiters.shift();
+      clearTimeout(waiter.timeoutId);
+      waiter.resolve(requestId);
+    } else {
+      pendingCloseAllRequests.push({ requestId });
+    }
+  }
+
+  WaitForCloseAllRequest() {
+    if (pendingCloseAllRequests.length > 0) {
+      const request = pendingCloseAllRequests.shift();
+      console.log(`[Window Grid DBus Helper] DELIVERED close-all requestId=${request.requestId} to KWin immediately`);
+      return request.requestId;
+    }
+    return new Promise((resolve) => {
+      const waiter = { resolve, timeoutId: null };
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingCloseAllWaiters.indexOf(waiter);
+        if (idx >= 0) pendingCloseAllWaiters.splice(idx, 1);
+        resolve('');
+      }, 8000);
+      pendingCloseAllWaiters.push(waiter);
+    });
+  }
+
   ToggleWindow() {
     fetch('http://127.0.0.1:48745/toggle', { method: 'POST' }).catch(() => {});
   }
@@ -464,6 +495,20 @@ const receiveWindowCountsDescriptor = method({ inSignature: 's', outSignature: '
   descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ReceiveWindowCounts')
 });
 receiveWindowCountsDescriptor.finisher(WindowGridKDEInterface);
+
+const triggerCloseAllDescriptor = method({ inSignature: '', outSignature: '' })({
+  kind: 'method',
+  key: 'TriggerCloseAll',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'TriggerCloseAll')
+});
+triggerCloseAllDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForCloseAllDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'WaitForCloseAllRequest',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForCloseAllRequest')
+});
+waitForCloseAllDescriptor.finisher(WindowGridKDEInterface);
 
 const toggleWindowDescriptor = method({ inSignature: '', outSignature: '' })({
   kind: 'method',

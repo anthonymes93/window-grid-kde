@@ -1148,6 +1148,7 @@ function computeWindowCounts() {
   for (let i = 0; i < allWindows.length; i++) {
     const w = allWindows[i];
     if (!isNormalUserWindow(w)) continue;
+    if (w.resourceClass === 'window-grid-kde') continue;
 
     const windowActivities = resolveWindowActivities(w);
     const windowDesktops = w.onAllDesktops ? allDesktops : resolveWindowDesktops(w);
@@ -1194,8 +1195,55 @@ function waitForWindowCountsRequest() {
   });
 }
 
+function handleCloseAll() {
+  const currentDesktop = workspace.currentDesktop;
+  const currentDesktopId = currentDesktop && currentDesktop.id ? String(currentDesktop.id) : '';
+  if (!currentDesktopId) {
+    log('[CLOSE ALL] ERROR: could not determine current desktop id');
+    return;
+  }
+  const windows = getWorkspaceWindows();
+  let count = 0;
+  for (let i = 0; i < windows.length; i++) {
+    const win = windows[i];
+    if (!isNormalUserWindow(win)) continue;
+    if (win.resourceClass === 'window-grid-kde') continue;
+    if (windowBelongsToDesktop(win, currentDesktopId)) {
+      win.closeWindow();
+      count++;
+    }
+  }
+  log('[CLOSE ALL] Closed ' + count + ' windows on desktop ' + currentDesktopId);
+}
+
+function waitForCloseAllRequest() {
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[CLOSE ALL] watchdog fired — re-arming');
+        waitForCloseAllRequest();
+      }
+    }, 15000);
+  } catch(e) {}
+
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'WaitForCloseAllRequest', function(requestId) {
+    if (handled) return;
+    handled = true;
+    try { clearTimeout(watchdogId); } catch(e) {}
+    log('[CLOSE ALL] callback fired, requestId=' + requestId);
+    if (requestId) {
+      handleCloseAll();
+    }
+    waitForCloseAllRequest();
+  });
+}
+
 log('[SECTION 2] init: starting polling loops at t=' + Date.now());
 waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();
 waitForWindowCountsRequest();
+waitForCloseAllRequest();
 callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});

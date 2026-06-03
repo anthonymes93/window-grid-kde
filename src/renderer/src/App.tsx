@@ -275,6 +275,35 @@ export function App(): JSX.Element {
     !isMoveAndSwitching &&
     !isMovingWindow;
 
+  const handleVisitDesktop = async (): Promise<void> => {
+    if (!selection) return;
+    const targetActivity = selection.activity;
+    const targetDesktop = selection.desktop;
+    const targetDesktopNumber = targetDesktop.index + 1;
+    try {
+      await window.kde.switchToActivity(targetActivity.id);
+      setCurrentActivityId(targetActivity.id);
+      await window.kde.switchToDesktopNumber(targetDesktopNumber);
+      setEventLog((current) => [
+        `✓ Switched to ${targetActivity.name} / ${targetDesktop.name}`,
+        ...current
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Visit failed: ${message}`, ...current]);
+    }
+  };
+
+  const handleCloseAll = async (): Promise<void> => {
+    try {
+      await window.kde.closeAllOnCurrentDesktop();
+      setEventLog((current) => ['✓ All windows closed', ...current]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Close all failed: ${message}`, ...current]);
+    }
+  };
+
   const handleRestoreLastLayout = async (): Promise<void> => {
     setIsRestoringLayout(true);
     try {
@@ -451,6 +480,15 @@ export function App(): JSX.Element {
         >
           Move Desktop
         </button>
+        {selection && (
+          <button
+            className="action-btn"
+            type="button"
+            onClick={() => void handleVisitDesktop()}
+          >
+            Visit Desktop
+          </button>
+        )}
         <button
           className="action-btn"
           type="button"
@@ -459,6 +497,13 @@ export function App(): JSX.Element {
           disabled={!canRestoreLayout}
         >
           Restore Layout
+        </button>
+        <button
+          className="action-btn danger"
+          type="button"
+          onClick={() => void handleCloseAll()}
+        >
+          Close All
         </button>
       </div>
 

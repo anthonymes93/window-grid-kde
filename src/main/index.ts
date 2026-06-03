@@ -749,6 +749,16 @@ ipcMain.handle(
     return moveWindowToActivityAndDesktop(windowId, activityId, desktopId);
   }
 );
+const triggerCloseAll = async (): Promise<void> => {
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.TriggerCloseAll'
+  ]);
+};
+
+ipcMain.handle('kde:closeAllOnCurrentDesktop', async () => triggerCloseAll());
+
 ipcMain.handle('kde:restoreLastLayout', async () => {
   console.log('IPC kde:restoreLastLayout received');
   return triggerRestoreLayout();
