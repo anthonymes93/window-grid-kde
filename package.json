@@ -9,7 +9,9 @@
     "build": "tsc --noEmit && electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dbus-helper": "node scripts/window-grid-dbus-helper.js",
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint . --ext .ts,.tsx",
+    "setup": "./scripts/tools/setup.sh",
+    "deploy:kwin": "./scripts/tools/deploy-kwin-script.sh"
   },
   "keywords": [
     "electron",

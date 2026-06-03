@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-REPO_SCRIPT="$HOME/Projects/window-grid-kde/scripts/window-grid-kde-kwin-script.js"
-INSTALLED_SCRIPT="$HOME/.local/share/kwin/scripts/testinglink/contents/code/main.js"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+
+REPO_SCRIPT="$REPO_ROOT/scripts/window-grid-kde-kwin-script.js"
+INSTALLED_DIR="$HOME/.local/share/kwin/scripts/testinglink/contents/code"
+INSTALLED_SCRIPT="$INSTALLED_DIR/main.js"
+
+mkdir -p "$INSTALLED_DIR"
 
 echo "Deploying repo KWin script..."
 cp "$REPO_SCRIPT" "$INSTALLED_SCRIPT"
