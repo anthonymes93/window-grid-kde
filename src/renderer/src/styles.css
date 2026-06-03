@@ -233,6 +233,24 @@ button:disabled {
   padding: 14px;
 }
 
+.grid-scroll::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.grid-scroll::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+
+.grid-scroll::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.grid-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
 .target-grid {
   display: grid;
   gap: 5px;
