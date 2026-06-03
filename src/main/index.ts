@@ -218,7 +218,6 @@ app.on('open-url', (event, rawUrl) => {
 });
 
 let itWorksWindow: import('electron').BrowserWindow | null = null;
-let itWorksInFlight = false;
 
 const createItWorksWindow = (): void => {
   itWorksWindow = new BrowserWindow({
@@ -250,17 +249,12 @@ const toggleItWorksWindow = (): void => {
     return;
   }
 
-  if (itWorksInFlight) return;
-  itWorksInFlight = true;
-  void pinToAllActivities(itWorksWindow).then(() => {
-    itWorksInFlight = false;
-    if (!itWorksWindow || itWorksWindow.isDestroyed()) return;
-    itWorksWindow.setAlwaysOnTop(true, 'screen-saver');
-    itWorksWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    itWorksWindow.show();
-    itWorksWindow.maximize();
-    itWorksWindow.focus();
-  });
+  itWorksWindow.setAlwaysOnTop(true, 'screen-saver');
+  itWorksWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  itWorksWindow.show();
+  itWorksWindow.maximize();
+  itWorksWindow.focus();
+  void pinToAllActivities(itWorksWindow);
 };
 
 const hideWindow = (): void => {
