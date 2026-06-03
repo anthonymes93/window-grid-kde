@@ -5,8 +5,10 @@
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n HELPER,APP \"npm run dbus-helper\" \"npm run dev:app\"",
+    "dev": "concurrently -k -n HELPER,APP,KWIN \"npm run watch:helper\" \"npm run dev:app\" \"npm run watch:kwin\"",
     "dev:app": "bash -c 'until qdbus6 2>/dev/null | grep -q com.anthony.WindowGridKDE; do sleep 0.3; done && npm run deploy:kwin' && env -u ELECTRON_RUN_AS_NODE electron-vite dev",
+    "watch:helper": "nodemon scripts/window-grid-dbus-helper.js",
+    "watch:kwin": "nodemon --watch scripts/window-grid-kde-kwin-script.js --watch scripts/window-grid-current-desktop-kwin-script.js --exec 'npm run deploy:kwin' --delay 0.5",
     "build": "tsc --noEmit && electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dbus-helper": "node scripts/window-grid-dbus-helper.js",
@@ -43,6 +45,7 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "globals": "^16.0.0",
+    "nodemon": "^3.1.14",
     "typescript-eslint": "^8.60.1"
   }
 }

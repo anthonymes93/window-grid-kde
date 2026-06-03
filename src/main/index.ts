@@ -43,6 +43,7 @@ const unavailableActiveWindow: ActiveWindow = {
 
 let selectedWindow: ActiveWindow | null = null;
 let latestWindowCounts: Record<string, number> = {};
+let mainWindowRef: import('electron').BrowserWindow | null = null;
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock();
 
@@ -205,14 +206,9 @@ const handleKwinWindowPost = async (
 app.on('second-instance', (_event, commandLine) => {
   handleProtocolUrlsFromArgv(commandLine);
 
-  const [browserWindow] = BrowserWindow.getAllWindows();
-
-  if (browserWindow) {
-    if (browserWindow.isMinimized()) {
-      browserWindow.restore();
-    }
-
-    browserWindow.focus();
+  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+    if (mainWindowRef.isMinimized()) mainWindowRef.restore();
+    mainWindowRef.focus();
   }
 });
 
@@ -222,36 +218,60 @@ app.on('open-url', (event, rawUrl) => {
 });
 
 let itWorksWindow: import('electron').BrowserWindow | null = null;
+let itWorksInFlight = false;
 
-const toggleItWorksWindow = (): void => {
-  if (itWorksWindow && !itWorksWindow.isDestroyed()) {
-    itWorksWindow.close();
-    return;
-  }
+const createItWorksWindow = (): void => {
   itWorksWindow = new BrowserWindow({
     frame: false,
-    fullscreen: true,
+    show: false,
     backgroundColor: '#0d1117',
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   });
   void itWorksWindow.loadURL(
     'data:text/html,' +
     encodeURIComponent(
-      '<!DOCTYPE html><html><body style="margin:0;background:#0d1117;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Inter,ui-sans-serif,sans-serif;color:#e6edf3;cursor:pointer" onclick="window.close()"><h1 style="font-size:80px;font-weight:700;letter-spacing:-2px">it works</h1></body></html>'
+      '<!DOCTYPE html><html><body tabindex="0" style="margin:0;background:#0d1117;display:flex;align-items:center;justify-content:center;height:100vh;font-family:Inter,ui-sans-serif,sans-serif;color:#e6edf3;cursor:pointer;outline:none" onclick="window.close()" onkeydown="window.close()"><h1 style="font-size:80px;font-weight:700;letter-spacing:-2px">it works</h1></body></html>'
     )
   );
-  itWorksWindow.on('closed', () => { itWorksWindow = null; });
+  itWorksWindow.on('close', (e) => {
+    e.preventDefault();
+    itWorksWindow?.hide();
+  });
+};
+
+const toggleItWorksWindow = (): void => {
+  if (!itWorksWindow || itWorksWindow.isDestroyed()) {
+    createItWorksWindow();
+  }
+  if (!itWorksWindow) return;
+
+  if (itWorksWindow.isVisible() && !itWorksWindow.isMinimized()) {
+    itWorksWindow.hide();
+    return;
+  }
+
+  if (itWorksInFlight) return;
+  itWorksInFlight = true;
+  void pinToAllActivities(itWorksWindow).then(() => {
+    itWorksInFlight = false;
+    if (!itWorksWindow || itWorksWindow.isDestroyed()) return;
+    itWorksWindow.setAlwaysOnTop(true, 'screen-saver');
+    itWorksWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    itWorksWindow.show();
+    itWorksWindow.maximize();
+    itWorksWindow.focus();
+  });
 };
 
 const hideWindow = (): void => {
-  const [mainWindow] = BrowserWindow.getAllWindows();
-  if (!mainWindow) return;
-  mainWindow.hide();
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
+  mainWindowRef.hide();
 };
 
-const pinToAllActivities = async (mainWindow: import('electron').BrowserWindow): Promise<void> => {
+const pinToAllActivities = async (win: import('electron').BrowserWindow): Promise<void> => {
+  if (win.isDestroyed()) return;
   try {
-    const handle = mainWindow.getNativeWindowHandle();
+    const handle = win.getNativeWindowHandle();
     const winId = handle.length >= 8
       ? Number(handle.readBigUInt64LE(0))
       : handle.readUInt32LE(0);
@@ -264,17 +284,16 @@ const pinToAllActivities = async (mainWindow: import('electron').BrowserWindow):
 };
 
 const toggleWindow = async (): Promise<void> => {
-  const [mainWindow] = BrowserWindow.getAllWindows();
-  if (!mainWindow) return;
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) return;
 
-  if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
+  if (mainWindowRef.isVisible() && !mainWindowRef.isMinimized()) {
     hideWindow();
   } else {
-    await pinToAllActivities(mainWindow);
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-    mainWindow.show();
-    mainWindow.maximize();
-    mainWindow.focus();
+    await pinToAllActivities(mainWindowRef);
+    mainWindowRef.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    mainWindowRef.show();
+    mainWindowRef.maximize();
+    mainWindowRef.focus();
     void runCommand('qdbus6', [
       'com.anthony.WindowGridKDE', '/WindowGridKDE',
       'com.anthony.WindowGridKDE.RequestWindowCounts'
@@ -299,8 +318,8 @@ const kwinBridgeServer = createServer((request, response) => {
     readRequestBody(request).then((body) => {
       try {
         latestWindowCounts = JSON.parse(body) as Record<string, number>;
-        for (const win of BrowserWindow.getAllWindows()) {
-          win.webContents.send('kde:windowCountsUpdated', latestWindowCounts);
+        if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+          mainWindowRef.webContents.send('kde:windowCountsUpdated', latestWindowCounts);
         }
         sendJson(response, 200, { ok: true });
       } catch {
@@ -758,6 +777,7 @@ const createWindow = (): void => {
     center: true,
     resizable: true,
     frame: false,
+    show: false,
     title: 'Window Grid KDE',
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -773,6 +793,8 @@ const createWindow = (): void => {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'));
   }
 
+  mainWindowRef = mainWindow;
+
   mainWindow.webContents.once('did-finish-load', () => {
     if (selectedWindow) {
       mainWindow.webContents.send('kde:selectedWindowFromKwin', selectedWindow);
@@ -784,6 +806,7 @@ app.whenReady().then(() => {
   registerProtocolClient();
   startKwinBridgeServer();
   createWindow();
+  createItWorksWindow();
   handleProtocolUrlsFromArgv(process.argv);
 
   app.on('activate', () => {

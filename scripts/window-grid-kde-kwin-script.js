@@ -709,12 +709,15 @@ registerShortcut(
     "Window Grid KDE: It Works",
     "Meta+A",
     function() {
+        print("Window Grid KDE: [SHORTCUT] Meta+A fired at t=" + Date.now());
         callDBus(
             WINDOW_GRID_KDE_SERVICE,
             WINDOW_GRID_KDE_PATH,
             WINDOW_GRID_KDE_INTERFACE,
             "ToggleItWorks",
-            function() {}
+            function() {
+                print("Window Grid KDE: [SHORTCUT] ToggleItWorks callback at t=" + Date.now());
+            }
         );
     }
 );
