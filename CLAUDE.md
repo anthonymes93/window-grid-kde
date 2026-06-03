@@ -283,9 +283,7 @@ These were hard-won fixes. Do NOT revert them:
 These exist in the codebase and should be ignored unless the specific task is to fix them:
 
 1. **`App.tsx:17`** — `Cannot find namespace 'JSX'` (TypeScript error on `JSX.Element` return type)
-2. **`App.tsx:283`** — `Cannot find name 'sourceActivity'` (variable referenced but not defined;
-   `sourceActivity` is used in an event log string but `currentActivity` is the correct variable)
-3. **`moveStartTime` in `handleMoveCurrentDesktop`** — defined with `Date.now()` and used in
+2. **`moveStartTime` in `handleMoveCurrentDesktop`** — defined with `Date.now()` and used in
    `[MOVE START]` log, but the `[MOVE FINISH]` log that computed duration was removed. The variable
    is still used for `[MOVE START]` so it is not unused.
 

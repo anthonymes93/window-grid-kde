@@ -8,6 +8,7 @@ When fixing a bug: move it from ACTIVE to RESOLVED, fill in the fix, and append 
 ## ACTIVE BUGS
 
 ### BUG-001: Move Current Desktop — Request Delivery Timeout — RESOLVED (see RESOLVED section)
+### BUG-002: Move + Switch causes blank white screen — RESOLVED (see RESOLVED section)
 
 **Status:** Active — feature non-functional  
 **Severity:** High  
@@ -130,6 +131,28 @@ This ensures `npm run deploy:kwin` properly restarts the KWin script context on 
 - After: `MoveCurrentDesktopToActivityAndDesktop` returns requestId in 0.103s
 - Logs confirm: `Matching windows found: 10`, each window moved with `activityMoveSucceeded=true`
 - H4 (callDBus serialization) ruled out: timestamps show all three callDBus calls sent at identical millisecond (`t=1780480708246`)
+
+---
+
+### BUG-002: Move + Switch button causes blank white screen
+
+**Status:** Fixed  
+**Root cause:** `handleMoveAndSwitch` (App.tsx line 283) referenced `sourceActivity` in a
+`setEventLog` state-updater callback. `sourceActivity` is a local variable in a completely
+different function (`handleMoveCurrentDesktop`, line 429) and is not in scope in
+`handleMoveAndSwitch`. When the state-updater ran, JavaScript threw
+`ReferenceError: sourceActivity is not defined`. React caught this during its render cycle and,
+with no error boundary wrapping the app, unmounted the entire component tree — blank white screen.
+
+**Fix 1:** Replaced `sourceActivity` with `currentActivity` (the correct component-scope
+variable computed at line 521 from `activities` and `currentActivityId`).
+
+**Fix 2:** Added `ErrorBoundary` class component in `main.tsx` wrapping `<App />`. Future
+unhandled render errors now show an error message with the stack trace instead of a blank screen.
+
+**Note:** This bug was listed as a pre-existing TS error in CLAUDE.md ("Cannot find name
+'sourceActivity'"). The TS error correctly identified the bug but it was marked do-not-fix.
+Fixing it now because it caused a user-visible crash.
 
 ---
 

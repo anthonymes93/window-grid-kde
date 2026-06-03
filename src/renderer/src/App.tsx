@@ -197,27 +197,28 @@ export function App(): JSX.Element {
     if (!activeWindow || !selection) return;
 
     const storedWindow = activeWindow;
-    const selectedDesktop = selection.desktop;
+    const targetActivity = selection.activity;
+    const targetDesktop = selection.desktop;
 
     console.log('[MOVE ACTIVE WINDOW] clicked', {
       activeWindow: storedWindow,
-      targetDesktop: selectedDesktop
+      targetActivity,
+      targetDesktop
     });
 
     console.log('[LoadingState] isMovingWindow → true');
     setIsMovingWindow(true);
     setEventLog((current) => [
       `[MOVE] Window: "${storedWindow.title}" (${storedWindow.id})`,
-      `[MOVE] Destination desktop: "${selectedDesktop.name}" (${selectedDesktop.id})`,
-      `Moving window to desktop ${selectedDesktop.name}...`,
+      `[MOVE] Destination: activity "${targetActivity.name}" / desktop "${targetDesktop.name}"`,
       ...current
     ]);
 
     try {
-      await window.kde.moveWindowToDesktop(storedWindow.id, selectedDesktop.id);
+      await window.kde.moveWindowToActivityAndDesktop(storedWindow.id, targetActivity.id, targetDesktop.id);
 
       setEventLog((current) => [
-        `[MOVE] Success: "${storedWindow.title}" -> desktop "${selectedDesktop.name}"`,
+        `[MOVE] Success: "${storedWindow.title}" -> "${targetActivity.name}" / "${targetDesktop.name}"`,
         ...current
       ]);
     } catch (error) {
@@ -280,7 +281,7 @@ export function App(): JSX.Element {
       setEventLog((current) => [
         `[MOVE+SWITCH] --- BEGIN ---`,
         `[MOVE+SWITCH] Window: "${storedWindow.title}" (${storedWindow.id})`,
-        `[MOVE+SWITCH] Source activity: "${sourceActivity?.name ?? 'unknown'}" (${currentActivityId ?? 'unknown'})`,
+        `[MOVE+SWITCH] Source activity: "${currentActivity?.name ?? 'unknown'}" (${currentActivityId ?? 'unknown'})`,
         `[MOVE+SWITCH] Source desktop: "${desktopBefore?.name ?? 'unknown'}" #${desktopBeforeNumber} (uuid: ${desktopBefore?.id ?? 'unknown'})`,
         `[MOVE+SWITCH] Target activity: "${targetActivity.name}" (${targetActivity.id})`,
         `[MOVE+SWITCH] Target desktop: "${targetDesktop.name}" #${targetDesktopNumber} (uuid: ${targetDesktop.id})`,

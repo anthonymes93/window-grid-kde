@@ -5,7 +5,8 @@
   "main": "out/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k -n HELPER,APP \"npm run dbus-helper\" \"env -u ELECTRON_RUN_AS_NODE electron-vite dev\"",
+    "dev": "concurrently -k -n HELPER,APP \"npm run dbus-helper\" \"npm run dev:app\"",
+    "dev:app": "bash -c 'until qdbus6 2>/dev/null | grep -q com.anthony.WindowGridKDE; do sleep 0.3; done && npm run deploy:kwin' && env -u ELECTRON_RUN_AS_NODE electron-vite dev",
     "build": "tsc --noEmit && electron-vite build",
     "preview": "env -u ELECTRON_RUN_AS_NODE electron-vite preview",
     "dbus-helper": "node scripts/window-grid-dbus-helper.js",
