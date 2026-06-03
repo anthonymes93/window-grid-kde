@@ -32,6 +32,7 @@ export function App(): JSX.Element {
   const [isSwitchingActivity, setIsSwitchingActivity] = useState(false);
   const [isMoveAndSwitching, setIsMoveAndSwitching] = useState(false);
   const [isMovingActivityOnly, setIsMovingActivityOnly] = useState(false);
+  const [isMovingCurrentDesktop, setIsMovingCurrentDesktop] = useState(false);
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>(['UI shell initialized.']);
 
@@ -39,7 +40,8 @@ export function App(): JSX.Element {
     console.log(
       '[LoadingState] initial — isMovingWindow:', false,
       '| isMoveAndSwitching:', false,
-      '| isMovingActivityOnly:', false
+      '| isMovingActivityOnly:', false,
+      '| isMovingCurrentDesktop:', false
     );
   }, []);
 
@@ -265,7 +267,6 @@ export function App(): JSX.Element {
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
-    const sourceActivity = activities.find((a) => a.id === currentActivityId) ?? null;
     const targetDesktopNumber = targetDesktop.index + 1;
 
     console.log('[LoadingState] isMoveAndSwitching → true');
@@ -408,6 +409,96 @@ export function App(): JSX.Element {
     Boolean(activeWindow && selection) &&
     activeWindow?.id !== 'unavailable' &&
     !isMovingActivityOnly;
+
+  const handleMoveCurrentDesktop = async (): Promise<void> => {
+    if (!selection) return;
+
+    const targetActivity = selection.activity;
+    const targetDesktop = selection.desktop;
+    const targetDesktopNumber = targetDesktop.index + 1;
+
+    console.log('[LoadingState] isMovingCurrentDesktop → true');
+    setIsMovingCurrentDesktop(true);
+
+    try {
+      const [sourceActivityId, sourceDesktopNumber] = await Promise.all([
+        window.kde.getCurrentActivity(),
+        window.kde.getCurrentDesktopNumber()
+      ]);
+      const sourceActivity = activities.find((a) => a.id === sourceActivityId) ?? null;
+      const sourceDesktop = desktops.find((d) => d.index + 1 === sourceDesktopNumber) ?? null;
+      setCurrentActivityId(sourceActivityId);
+
+      setEventLog((current) => [
+        `[CURRENT-DESKTOP] --- BEGIN ---`,
+        `[CURRENT-DESKTOP] Source activity: "${sourceActivity?.name ?? 'unknown'}" (${sourceActivityId})`,
+        `[CURRENT-DESKTOP] Source desktop: "${sourceDesktop?.name ?? 'unknown'}" #${sourceDesktopNumber} (uuid: ${sourceDesktop?.id ?? 'unknown'})`,
+        `[CURRENT-DESKTOP] Target activity: "${targetActivity.name}" (${targetActivity.id})`,
+        `[CURRENT-DESKTOP] Target desktop: "${targetDesktop.name}" #${targetDesktopNumber} (uuid: ${targetDesktop.id})`,
+        ...current
+      ]);
+
+      await window.kde.moveCurrentDesktopToActivityAndDesktop(
+        targetActivity.id,
+        targetDesktop.id
+      );
+
+      setEventLog((current) => [
+        `[CURRENT-DESKTOP] Move delivered to KWin. Waiting 500ms for KWin to process...`,
+        ...current
+      ]);
+
+      await wait(500);
+
+      await window.kde.switchToActivity(targetActivity.id);
+      setCurrentActivityId(targetActivity.id);
+
+      setEventLog((current) => [
+        `[CURRENT-DESKTOP] Activity switch sent: "${targetActivity.name}". Waiting 300ms...`,
+        ...current
+      ]);
+
+      await wait(300);
+
+      await window.kde.switchToDesktopNumber(targetDesktopNumber);
+
+      setEventLog((current) => [
+        `[CURRENT-DESKTOP] Desktop switch sent: "${targetDesktop.name}" #${targetDesktopNumber}. Waiting 300ms...`,
+        ...current
+      ]);
+
+      await wait(300);
+
+      const [finalActivityId, finalDesktopNumber] = await Promise.all([
+        window.kde.getCurrentActivity(),
+        window.kde.getCurrentDesktopNumber()
+      ]);
+      const finalActivity = activities.find((a) => a.id === finalActivityId) ?? null;
+      const finalDesktop = desktops.find((d) => d.index + 1 === finalDesktopNumber) ?? null;
+      const success =
+        finalActivityId === targetActivity.id && finalDesktopNumber === targetDesktopNumber;
+
+      setCurrentActivityId(finalActivityId);
+      setEventLog((current) => [
+        `[CURRENT-DESKTOP] FINAL current activity: "${finalActivity?.name ?? 'unknown'}" (${finalActivityId})`,
+        `[CURRENT-DESKTOP] FINAL current desktop: "${finalDesktop?.name ?? 'unknown'}" #${finalDesktopNumber} (uuid: ${finalDesktop?.id ?? 'unknown'})`,
+        `[CURRENT-DESKTOP] SUCCESS=${success}`,
+        ...current
+      ]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error.';
+      setEventLog((current) => [`[CURRENT-DESKTOP] Failed: ${message}`, ...current]);
+    } finally {
+      console.log('[LoadingState] isMovingCurrentDesktop → false');
+      setIsMovingCurrentDesktop(false);
+    }
+  };
+
+  const canMoveCurrentDesktop =
+    Boolean(selection) &&
+    !isMovingCurrentDesktop &&
+    !isMoveAndSwitching &&
+    !isMovingWindow;
 
   const currentActivity = activities.find((a) => a.id === currentActivityId) ?? null;
   const selectedActivity = selection?.activity ?? null;
@@ -597,6 +688,16 @@ export function App(): JSX.Element {
                   disabled={!canMoveActivityOnly}
                 >
                   Activity Only
+                </button>
+
+                <button
+                  className="refresh-button"
+                  type="button"
+                  data-loading={String(isMovingCurrentDesktop)}
+                  onClick={() => void handleMoveCurrentDesktop()}
+                  disabled={!canMoveCurrentDesktop}
+                >
+                  Move Current Desktop
                 </button>
               </div>
             </div>

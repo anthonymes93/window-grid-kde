@@ -557,6 +557,36 @@ const moveWindowToActivityAndDesktop = async (
   console.log('[Electron] AFTER MoveWindowToActivityAndDesktop: move DELIVERED to KWin (qdbus6 returned)');
 };
 
+const moveCurrentDesktopToActivityAndDesktop = async (
+  targetActivityId: string,
+  targetDesktopId: string
+): Promise<void> => {
+  if (targetActivityId.trim().length === 0) {
+    throw new Error(`Invalid target activity id: ${targetActivityId}`);
+  }
+
+  if (targetDesktopId.trim().length === 0) {
+    throw new Error(`Invalid target desktop id: ${targetDesktopId}`);
+  }
+
+  console.log('[Electron] BEFORE MoveCurrentDesktopToActivityAndDesktop:', {
+    targetActivityId,
+    targetDesktopId
+  });
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.MoveCurrentDesktopToActivityAndDesktop',
+    targetActivityId,
+    targetDesktopId
+  ]);
+
+  console.log(
+    '[Electron] AFTER MoveCurrentDesktopToActivityAndDesktop: move DELIVERED to KWin (qdbus6 returned)'
+  );
+};
+
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());
@@ -594,6 +624,16 @@ ipcMain.handle(
       desktopId
     });
     return moveWindowToActivityAndDesktop(windowId, activityId, desktopId);
+  }
+);
+ipcMain.handle(
+  'kde:moveCurrentDesktopToActivityAndDesktop',
+  async (_event, targetActivityId: string, targetDesktopId: string) => {
+    console.log('IPC kde:moveCurrentDesktopToActivityAndDesktop received:', {
+      targetActivityId,
+      targetDesktopId
+    });
+    return moveCurrentDesktopToActivityAndDesktop(targetActivityId, targetDesktopId);
   }
 );
 

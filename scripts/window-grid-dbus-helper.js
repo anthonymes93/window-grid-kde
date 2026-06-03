@@ -8,10 +8,11 @@ const { Interface, method } = dbus.interface;
 const SERVICE_NAME = 'com.anthony.WindowGridKDE';
 const OBJECT_PATH = '/WindowGridKDE';
 const ELECTRON_ENDPOINT = 'http://127.0.0.1:48745/kwin/window';
-const MOVE_WAIT_TIMEOUT_MS = 60_000;
 
 const pendingMoveRequests = [];
 const pendingMoveWaiters = [];
+const pendingCurrentDesktopMoveRequests = [];
+const pendingCurrentDesktopMoveWaiters = [];
 let requestIdCounter = 0;
 
 const toDesktopIds = (desktopIdsCsv) =>
@@ -67,6 +68,33 @@ console.log(
       moveRequest.windowId,
       moveRequest.activityId ?? '',
       moveRequest.desktopId,
+      moveRequest.requestId
+    ]);
+  }
+};
+
+const notifyCurrentDesktopMoveWaiters = () => {
+  while (
+    pendingCurrentDesktopMoveRequests.length > 0 &&
+    pendingCurrentDesktopMoveWaiters.length > 0
+  ) {
+    const queueLengthBefore = pendingCurrentDesktopMoveRequests.length;
+    const moveRequest = pendingCurrentDesktopMoveRequests.shift();
+    const waiter = pendingCurrentDesktopMoveWaiters.shift();
+    const queueLengthAfter = pendingCurrentDesktopMoveRequests.length;
+
+    clearTimeout(waiter.timeoutId);
+    console.log(
+      `[Window Grid DBus Helper] DELIVERED current-desktop requestId=${moveRequest.requestId} to KWin (queue before=${queueLengthBefore}, after=${queueLengthAfter})`
+    );
+
+    if (moveRequest.onDelivered) {
+      moveRequest.onDelivered();
+    }
+
+    waiter.resolve([
+      moveRequest.targetActivityId,
+      moveRequest.targetDesktopId,
       moveRequest.requestId
     ]);
   }
@@ -159,6 +187,49 @@ class WindowGridKDEInterface extends Interface {
     notifyMoveWaiters();
   }
 
+  MoveCurrentDesktopToActivityAndDesktop(targetActivityId, targetDesktopId) {
+    const requestId = String(++requestIdCounter);
+    console.log('[Window Grid DBus Helper] MoveCurrentDesktopToActivityAndDesktop CALLED:', {
+      requestId,
+      targetActivityId,
+      targetDesktopId,
+      queueLengthBefore: pendingCurrentDesktopMoveRequests.length
+    });
+
+    return new Promise((resolve, reject) => {
+      const deliveryTimeoutId = setTimeout(() => {
+        const idx = pendingCurrentDesktopMoveRequests.findIndex((r) => r.requestId === requestId);
+        if (idx >= 0) {
+          pendingCurrentDesktopMoveRequests.splice(idx, 1);
+        }
+        console.log(
+          `[Window Grid DBus Helper] MoveCurrentDesktopToActivityAndDesktop TIMEOUT: requestId=${requestId} not delivered within 10s`
+        );
+        reject(new Error(`Current desktop move request ${requestId} not delivered to KWin within 10s`));
+      }, 10_000);
+
+      const request = {
+        targetActivityId,
+        targetDesktopId,
+        requestId,
+        onDelivered: () => {
+          clearTimeout(deliveryTimeoutId);
+          console.log(
+            `[Window Grid DBus Helper] MoveCurrentDesktopToActivityAndDesktop DELIVERED: requestId=${requestId}`
+          );
+          resolve(requestId);
+        }
+      };
+
+      pendingCurrentDesktopMoveRequests.push(request);
+      console.log(
+        '[Window Grid DBus Helper] Current desktop queue length after push:',
+        pendingCurrentDesktopMoveRequests.length
+      );
+      notifyCurrentDesktopMoveWaiters();
+    });
+  }
+
   Sleep(requestId, windowId, delayMs) {
     const delayMsInt = Math.max(0, Math.min(30_000, parseInt(delayMs, 10) || 0));
     console.log(`[Window Grid DBus Helper] Sleep scheduled: requestId=${requestId} windowId=${windowId} delayMs=${delayMsInt}`);
@@ -201,6 +272,43 @@ class WindowGridKDEInterface extends Interface {
       }, 8000);
 
       pendingMoveWaiters.push(waiter);
+    });
+  }
+
+  WaitForCurrentDesktopMoveRequest() {
+    if (pendingCurrentDesktopMoveRequests.length > 0) {
+      const queueLengthBefore = pendingCurrentDesktopMoveRequests.length;
+      const moveRequest = pendingCurrentDesktopMoveRequests.shift();
+      console.log(
+        `[Window Grid DBus Helper] DELIVERED current-desktop requestId=${moveRequest.requestId} to KWin immediately (queue before=${queueLengthBefore}, after=${pendingCurrentDesktopMoveRequests.length})`
+      );
+      if (moveRequest.onDelivered) {
+        moveRequest.onDelivered();
+      }
+      return [moveRequest.targetActivityId, moveRequest.targetDesktopId, moveRequest.requestId];
+    }
+
+    console.log(
+      '[Window Grid DBus Helper] KWin waiting for next current desktop move request. Queue length:',
+      pendingCurrentDesktopMoveRequests.length
+    );
+
+    return new Promise((resolve) => {
+      const waiter = {
+        resolve,
+        timeoutId: null
+      };
+
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingCurrentDesktopMoveWaiters.indexOf(waiter);
+        if (idx >= 0) {
+          pendingCurrentDesktopMoveWaiters.splice(idx, 1);
+        }
+        console.log('[Window Grid DBus Helper] WaitForCurrentDesktopMoveRequest heartbeat timeout');
+        resolve(['', '', '']);
+      }, 8000);
+
+      pendingCurrentDesktopMoveWaiters.push(waiter);
     });
   }
 }
@@ -260,6 +368,31 @@ const moveWindowActivityOnlyDescriptor = method({ inSignature: 'ss', outSignatur
 
 moveWindowActivityOnlyDescriptor.finisher(WindowGridKDEInterface);
 
+const moveCurrentDesktopActivityDesktopDescriptor = method({
+  inSignature: 'ss',
+  outSignature: 's'
+})({
+  kind: 'method',
+  key: 'MoveCurrentDesktopToActivityAndDesktop',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'MoveCurrentDesktopToActivityAndDesktop'
+  )
+});
+
+moveCurrentDesktopActivityDesktopDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForCurrentDesktopMoveDescriptor = method({ inSignature: '', outSignature: 'sss' })({
+  kind: 'method',
+  key: 'WaitForCurrentDesktopMoveRequest',
+  descriptor: Object.getOwnPropertyDescriptor(
+    WindowGridKDEInterface.prototype,
+    'WaitForCurrentDesktopMoveRequest'
+  )
+});
+
+waitForCurrentDesktopMoveDescriptor.finisher(WindowGridKDEInterface);
+
 const sleepDescriptor = method({ inSignature: 'sss', outSignature: 'ss' })({
   kind: 'method',
   key: 'Sleep',
@@ -305,8 +438,10 @@ try {
       'MoveWindowToDesktop(string windowId, string desktopId)',
       'MoveWindowToActivityAndDesktop(string windowId, string activityId, string desktopId)',
       'MoveWindowToActivityOnly(string windowId, string activityId)',
+      'MoveCurrentDesktopToActivityAndDesktop(string targetActivityId, string targetDesktopId)',
       'Sleep(string requestId, string windowId, string delayMs) -> (string requestId, string windowId)',
-      'WaitForMoveRequest() -> (string windowId, string activityId, string desktopId, string requestId)'
+      'WaitForMoveRequest() -> (string windowId, string activityId, string desktopId, string requestId)',
+      'WaitForCurrentDesktopMoveRequest() -> (string targetActivityId, string targetDesktopId, string requestId)'
     ]
   });
 } catch (error) {

@@ -32,6 +32,10 @@ declare global {
         activityId: string,
         desktopId: string
       ) => Promise<void>;
+      moveCurrentDesktopToActivityAndDesktop: (
+        targetActivityId: string,
+        targetDesktopId: string
+      ) => Promise<void>;
       switchToActivity: (activityId: string) => Promise<void>;
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;

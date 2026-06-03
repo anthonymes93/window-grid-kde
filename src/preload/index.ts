@@ -12,6 +12,12 @@ contextBridge.exposeInMainWorld('kde', {
     ipcRenderer.invoke('kde:moveWindowToDesktop', windowId, desktopId),
   moveWindowToActivityAndDesktop: (windowId: string, activityId: string, desktopId: string) =>
     ipcRenderer.invoke('kde:moveWindowToActivityAndDesktop', windowId, activityId, desktopId),
+  moveCurrentDesktopToActivityAndDesktop: (targetActivityId: string, targetDesktopId: string) =>
+    ipcRenderer.invoke(
+      'kde:moveCurrentDesktopToActivityAndDesktop',
+      targetActivityId,
+      targetDesktopId
+    ),
   switchToActivity: (activityId: string) =>
     ipcRenderer.invoke('kde:switchToActivity', activityId),
   moveWindowToActivityOnly: (windowId: string, activityId: string) =>
