@@ -590,6 +590,19 @@ function waitForMoveRequests() {
     print("Window Grid KDE: waitForMoveRequests SET true");
     print("Window Grid KDE: waiting for next move request");
 
+    var handled = false;
+    var watchdogId = null;
+    try {
+        watchdogId = setTimeout(function() {
+            if (!handled) {
+                handled = true;
+                isWaitingForMoveRequest = false;
+                print("Window Grid KDE: waitForMoveRequests watchdog fired — re-arming after disconnect");
+                waitForMoveRequests();
+            }
+        }, 15000);
+    } catch (e) {}
+
     try {
         callDBus(
             WINDOW_GRID_KDE_SERVICE,
@@ -597,6 +610,9 @@ function waitForMoveRequests() {
             WINDOW_GRID_KDE_INTERFACE,
             "WaitForMoveRequest",
             function(windowId, activityId, desktopId, requestId) {
+                if (handled) return;
+                handled = true;
+                try { clearTimeout(watchdogId); } catch (e) {}
                 isWaitingForMoveRequest = false;
                 print("Window Grid KDE: waitForMoveRequests SET false inside callback");
                 print("Window Grid KDE: WaitForMoveRequest callback windowId=" + valueOrEmpty(windowId) +
@@ -612,6 +628,10 @@ function waitForMoveRequests() {
             }
         );
     } catch (error) {
+        if (!handled) {
+            handled = true;
+            try { clearTimeout(watchdogId); } catch (e) {}
+        }
         isWaitingForMoveRequest = false;
         print("Window Grid KDE: waitForMoveRequests SET false inside catch");
         print("Window Grid KDE: WaitForMoveRequest call failed: " + error);
@@ -968,19 +988,33 @@ const currentDesktopId = currentDesktop && currentDesktop.id
 function waitForCurrentDesktopMoveRequest() {
   log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent at t=' + Date.now());
 
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[SECTION 2] WaitForCurrentDesktopMoveRequest: watchdog fired — re-arming after disconnect');
+        waitForCurrentDesktopMoveRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForCurrentDesktopMoveRequest',
     function (targetActivityId, targetDesktopId, requestId) {
+      if (handled) return;
+      handled = true;
+      try { clearTimeout(watchdogId); } catch (e) {}
       log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired at t=' + Date.now() + ' activityId=' + targetActivityId + ' desktopId=' + targetDesktopId + ' requestId=' + requestId);
       try {
         handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId);
       } catch (error) {
         log(`MoveCurrentDesktopToActivityAndDesktop failed: ${error}`);
       }
-
       waitForCurrentDesktopMoveRequest();
     }
   );
@@ -1002,12 +1036,27 @@ function runRestoreLayout() {
 function waitForRestoreLayoutRequest() {
   log('[SECTION 2] WaitForRestoreLayoutRequest: callDBus sent at t=' + Date.now());
 
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[SECTION 2] WaitForRestoreLayoutRequest: watchdog fired — re-arming after disconnect');
+        waitForRestoreLayoutRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForRestoreLayoutRequest',
     function(requestId) {
+      if (handled) return;
+      handled = true;
+      try { clearTimeout(watchdogId); } catch (e) {}
       log('[SECTION 2] WaitForRestoreLayoutRequest: callback fired at t=' + Date.now() + ' requestId=' + requestId);
       if (requestId) {
         runRestoreLayout();

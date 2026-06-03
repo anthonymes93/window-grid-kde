@@ -168,10 +168,13 @@ other direction). All other methods are Electron→helper→KWin.
 # 1. Edit the script (Section 1 or 2 as needed)
 #    If Section 2: edit both source file AND combined file
 
-# 2. Deploy to KWin
+# 2. Deploy to KWin (copies file + unloads/reloads with correct path + starts)
 npm run deploy:kwin
 
-# 3. Watch logs to confirm script reloaded
+# 3. Confirm script started — look for these lines within ~2s:
+#    [SECTION 1] init complete, calling waitForMoveRequests at t=...
+#    [SECTION 2] loaded at t=...
+#    [SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent at t=...
 journalctl -f | grep "Window Grid KDE"
 
 # 4. Trigger the operation from the UI
@@ -238,6 +241,22 @@ These were hard-won fixes. Do NOT revert them:
 
 7. **Section 2 `const` declarations** at module level — these are valid in Plasma 6 KWin's JS
    engine. Do not convert to `var` unless a specific engine compatibility issue is found.
+
+8. **Watchdog timers in all three polling functions** — `waitForMoveRequests`,
+   `waitForCurrentDesktopMoveRequest`, `waitForRestoreLayoutRequest` each have a `setTimeout(fn, 15000)`
+   watchdog. When the helper disconnects, KWin's `callDBus` silently drops callbacks, killing the
+   polling loops permanently. The watchdog detects this and re-arms the loop after 15s. Do NOT
+   remove these watchdogs. The `setTimeout` is wrapped in try-catch for graceful degradation.
+
+9. **`deploy:kwin` must do exactly ONE unload/load/start cycle with the correct absolute path.**
+   - `loadScript` requires `$HOME/.local/share/...` — the root-relative path `/.local/share/...`
+     registers the plugin name without executing the JS file.
+   - Running TWO unload/load cycles (e.g., shell script cycle + our cycle) breaks KWin's
+     callback dispatch: `callDBus` callbacks are silently dropped after the second load,
+     so all polling loops stop immediately after startup despite `print()` working fine.
+   - The `deploy:kwin` npm script bypasses `deploy-kwin-script.sh`'s qdbus6 commands and
+     does the copy + single correct cycle inline. Do not change the npm script to call the
+     shell script for qdbus6 operations.
 
 ---
 

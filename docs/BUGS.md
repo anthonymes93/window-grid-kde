@@ -7,7 +7,7 @@ When fixing a bug: move it from ACTIVE to RESOLVED, fill in the fix, and append 
 
 ## ACTIVE BUGS
 
-### BUG-001: Move Current Desktop — Request Delivery Timeout
+### BUG-001: Move Current Desktop — Request Delivery Timeout — RESOLVED (see RESOLVED section)
 
 **Status:** Active — feature non-functional  
 **Severity:** High  
@@ -90,6 +90,48 @@ callDBus sent` appears ~8s after `[SECTION 1] init complete`, H4 is confirmed.
 ---
 
 ## RESOLVED BUGS
+
+### BUG-001: Move Current Desktop — Request Delivery Timeout
+
+**Status:** Fixed  
+**Root cause 1 — polling loop death on helper disconnect:**
+When the DBus helper disconnects (crash, restart, `npm run dev` restart), KWin's `callDBus`
+does NOT invoke the JavaScript callback on disconnect errors. It silently drops the callback.
+All three polling loops (`WaitForMoveRequest`, `WaitForCurrentDesktopMoveRequest`,
+`WaitForRestoreLayoutRequest`) stopped permanently at disconnect and never recovered.
+Any subsequent helper restart had no waiters registered by KWin.
+
+**Root cause 2 — deploy script used wrong loadScript path:**
+`deploy-kwin-script.sh` called:
+`qdbus6 … loadScript "/.local/share/kwin/scripts/testinglink/contents/code/main.js" testinglink`
+The path `/.local/share/…` is root-relative (does not exist). KWin registered the plugin name
+but did not execute the script file. `isScriptLoaded` returned `true` (name registered) but the
+JS context was not running. The polling loops never restarted on deploy.
+
+**Fix 1 — watchdog timers in all three polling functions:**
+Added a `setTimeout(fn, 15000)` watchdog in `waitForMoveRequests`, `waitForCurrentDesktopMoveRequest`,
+and `waitForRestoreLayoutRequest`. If the callDBus callback has not fired within 15 seconds
+(normal heartbeat is 8s), the watchdog re-arms the polling function. This makes all three loops
+resilient to helper disconnects. The `setTimeout` call is wrapped in try-catch so it degrades
+gracefully if unavailable in the KWin engine version. Both files updated:
+`scripts/window-grid-kde-kwin-script.js` and `scripts/window-grid-current-desktop-kwin-script.js`
+
+**Fix 2 — corrected deploy:kwin in package.json:**
+Updated the `deploy:kwin` npm script to append the correct `loadScript` call after the shell
+script runs:
+```
+qdbus6 … loadScript "$HOME/.local/share/kwin/scripts/testinglink/contents/code/main.js" testinglink
+qdbus6 … start
+```
+This ensures `npm run deploy:kwin` properly restarts the KWin script context on every deploy.
+
+**Evidence of fix:**
+- Before: delivery timeout after 10s on every click
+- After: `MoveCurrentDesktopToActivityAndDesktop` returns requestId in 0.103s
+- Logs confirm: `Matching windows found: 10`, each window moved with `activityMoveSucceeded=true`
+- H4 (callDBus serialization) ruled out: timestamps show all three callDBus calls sent at identical millisecond (`t=1780480708246`)
+
+---
 
 ### BUG-R01: All windows rejected by desktop filter (windowBelongsToDesktop always false)
 

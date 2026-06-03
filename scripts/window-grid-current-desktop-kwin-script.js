@@ -289,19 +289,33 @@ function handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId) 
 function waitForCurrentDesktopMoveRequest() {
   log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callDBus sent at t=' + Date.now());
 
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[SECTION 2] WaitForCurrentDesktopMoveRequest: watchdog fired — re-arming after disconnect');
+        waitForCurrentDesktopMoveRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForCurrentDesktopMoveRequest',
     function (targetActivityId, targetDesktopId, requestId) {
+      if (handled) return;
+      handled = true;
+      try { clearTimeout(watchdogId); } catch (e) {}
       log('[SECTION 2] WaitForCurrentDesktopMoveRequest: callback fired at t=' + Date.now() + ' activityId=' + targetActivityId + ' desktopId=' + targetDesktopId + ' requestId=' + requestId);
       try {
         handleMoveCurrentDesktop(targetActivityId, targetDesktopId, requestId);
       } catch (error) {
         log(`MoveCurrentDesktopToActivityAndDesktop failed: ${error}`);
       }
-
       waitForCurrentDesktopMoveRequest();
     }
   );
@@ -323,12 +337,27 @@ function runRestoreLayout() {
 function waitForRestoreLayoutRequest() {
   log('[SECTION 2] WaitForRestoreLayoutRequest: callDBus sent at t=' + Date.now());
 
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[SECTION 2] WaitForRestoreLayoutRequest: watchdog fired — re-arming after disconnect');
+        waitForRestoreLayoutRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
   callDBus(
     SERVICE_NAME,
     OBJECT_PATH,
     INTERFACE_NAME,
     'WaitForRestoreLayoutRequest',
     function(requestId) {
+      if (handled) return;
+      handled = true;
+      try { clearTimeout(watchdogId); } catch (e) {}
       log('[SECTION 2] WaitForRestoreLayoutRequest: callback fired at t=' + Date.now() + ' requestId=' + requestId);
       if (requestId) {
         runRestoreLayout();

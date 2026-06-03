@@ -4,15 +4,6 @@ Items are ordered roughly by priority. Update this file when items are completed
 
 ---
 
-## In Progress
-
-### Fix Move Current Desktop delivery (BUG-001)
-Move windows on the current desktop to a target activity and desktop.
-Currently broken: requests time out in the DBus delivery path.
-See `docs/BUGS.md#BUG-001` for full investigation state.
-
----
-
 ## Next Up
 
 ### Investigate combined KWin script structural issues
@@ -66,6 +57,7 @@ activity/desktop (like "Move + Switch" does for single windows).
 
 ## Completed
 
+- ✅ Move Current Desktop (bulk) — BUG-001 fixed (watchdog timers + deploy path fix)
 - ✅ KWin right-click context menu "Open in Window Grid KDE"
 - ✅ Single window move to desktop (MoveWindowToDesktop)
 - ✅ Single window move to activity and desktop (MoveWindowToActivityAndDesktop)

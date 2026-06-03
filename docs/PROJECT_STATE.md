@@ -7,8 +7,8 @@
 
 ## Current Focus
 
-Diagnosing and fixing BUG-001: Move Current Desktop delivery timeout.
-See `docs/BUGS.md#BUG-001` for full investigation state and hypotheses.
+BUG-001 is resolved. Move Current Desktop is now working end-to-end.
+No active bug. Next item per roadmap: investigate combined KWin script structural issues.
 
 ---
 
@@ -19,7 +19,7 @@ See `docs/BUGS.md#BUG-001` for full investigation state and hypotheses.
 | Move Selected Window | ✅ Working | Via KDE right-click → "Open in Window Grid KDE" |
 | Move + Switch Activity | ✅ Working | Moves window then navigates to target activity/desktop |
 | Activity Only move | ✅ Working | Moves to activity, no desktop change |
-| Move Current Desktop (bulk) | ❌ Broken | Delivery timeout — BUG-001 |
+| Move Current Desktop (bulk) | ✅ Working | BUG-001 resolved |
 | Auto Restore Layout | ✅ Working | 2s delayed geometry restore after bulk move |
 | Restore Last Layout button | ✅ Working | Manual re-trigger of `runRestoreLayout()` |
 | KWin right-click context menu | ✅ Working | "Open in Window Grid KDE" on any window |

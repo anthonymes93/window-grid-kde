@@ -145,3 +145,56 @@ Sleep callback and the `waitForRestoreLayoutRequest` callback (manual button pat
 **Reason:** DRY. Before this, the loop was inlined in `waitForRestoreLayoutRequest` and
 duplicating it in the Sleep callback would have created two places to maintain. The function
 closes over `lastBulkMoveLayout` correctly since it reads the module-level variable at call time.
+
+---
+
+## DEC-012: Watchdog Timer in All Three KWin Polling Functions
+
+**Decision:** Add a `setTimeout(fn, 15000)` watchdog to `waitForMoveRequests`,
+`waitForCurrentDesktopMoveRequest`, and `waitForRestoreLayoutRequest`. The watchdog re-arms the
+polling function if the `callDBus` callback has not fired within 15 seconds.  
+**Reason:** KWin's `callDBus` silently drops callbacks when the DBus service disconnects
+(e.g., helper crashes or restarts). Without the watchdog, all polling loops die permanently on
+any helper restart, causing all moves to fail indefinitely until the KWin script is manually
+reloaded. The watchdog makes loops self-healing.  
+**Why 15 seconds:** Normal heartbeat is 8 seconds. 15s gives ample margin for slow DBus round
+trips without being long enough to noticeably delay recovery.  
+**Why try-catch around setTimeout:** `setTimeout` is a browser/Node API. KWin's QJSEngine may
+not expose it. The try-catch ensures the watchdog degrades gracefully if unavailable.  
+**Alternative rejected:** Using `callDBus Sleep` as a timer — the Sleep callback also dies on
+helper disconnect, so it doesn't solve the reconnect case.
+
+---
+
+## DEC-013: loadScript Path Fix in deploy:kwin
+
+**Decision:** Updated the `deploy:kwin` npm script to append correct `qdbus6 loadScript` and
+`start` calls using `$HOME/.local/share/...` after the existing shell script runs.  
+**Reason:** `deploy-kwin-script.sh` calls `loadScript "/.local/share/..."` (root-relative path,
+file does not exist there). KWin registers the plugin name but doesn't execute the JS file.
+`isScriptLoaded` returns `true` (name known) while the script context is not running.  
+**Why not edit the shell script:** The deploy script is marked "Never edit" in CLAUDE.md.  
+**Alternative considered:** `kwin reconfigure` — does not trigger script re-execution in practice.
+
+---
+
+## DEC-014: deploy:kwin Bypasses Shell Script qdbus6 Commands
+
+**Decision:** Replaced `deploy:kwin` npm script with a direct inline sequence that does a single
+unload/load/start cycle with the correct absolute path, bypassing `deploy-kwin-script.sh`'s
+qdbus6 commands entirely. The shell script is still responsible for file copy only.
+
+**Reason:** `deploy-kwin-script.sh` runs its own `unloadScript + loadScript(wrong-path)` before
+our corrected commands ran a second `unloadScript + loadScript(correct-path) + start`. The
+double unload/reload cycle causes KWin's scripting engine to break callback dispatch on the new
+script context — callbacks from `callDBus` are silently dropped, so all polling loops stop
+immediately after startup despite `print()` showing the script is running.
+
+A single `unloadScript + loadScript(correct-path) + start` sequence produces a working context
+where callbacks fire normally (confirmed: heartbeats appear 8 seconds after startup).
+
+**Alternative rejected:** Appending qdbus6 commands after the shell script — causes the double
+cycle. `kwin reconfigure` — does not re-execute the script context.
+
+**How to apply:** `npm run deploy:kwin` is the only way to deploy. Do not call
+`deploy-kwin-script.sh` directly for qdbus6 operations; use it only as a file-copy tool if needed.

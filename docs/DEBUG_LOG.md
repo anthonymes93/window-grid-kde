@@ -15,6 +15,39 @@ Never delete entries — they are the project's empirical history.
 
 ---
 
+## 2026-06-03 — BUG-001 resolved: two root causes found and fixed
+
+**Hypothesis / Question:** Why does `WaitForCurrentDesktopMoveRequest` never receive a KWin waiter?
+
+**Root cause 1 confirmed — polling loops die on helper disconnect:**
+When the DBus helper disconnects/restarts, KWin's `callDBus` does not invoke the JS callback on
+error. It silently drops it. All three polling loops stopped at 03:26:52 (the disconnect event)
+and never self-healed. The new helper instance (started with `npm run dev` at 05:44) had no
+waiters registered.
+
+**Root cause 2 confirmed — `loadScript` path in deploy script is wrong:**
+`deploy-kwin-script.sh` used `/.local/share/kwin/scripts/testinglink/contents/code/main.js`
+(root-relative, no `/home/username` prefix). KWin registered the plugin name but didn't execute
+the file. `isScriptLoaded` returned `true` (name registered) but the JS never ran.
+Correct path: `$HOME/.local/share/kwin/scripts/testinglink/contents/code/main.js`
+
+**Fix 1 — watchdog timer in all three polling functions:**
+Added `setTimeout(fn, 15000)` watchdog (try-catch wrapped) that re-arms any loop whose
+`callDBus` callback fails to fire within 15 seconds. Deployed in both source files.
+
+**Fix 2 — corrected loadScript path in deploy:kwin npm script:**
+Updated `package.json` `deploy:kwin` to append:
+`qdbus6 … loadScript "$HOME/..." testinglink && qdbus6 … start`
+after the shell script runs.
+
+**Evidence:**
+- Before fix: 10s delivery timeout on every click
+- After fix: `MoveCurrentDesktopToActivityAndDesktop` returns in 0.103s
+- Logs: `Matching windows found: 10`, each window moved, `activityMoveSucceeded=true`
+- H4 (serialization) ruled out: all three callDBus calls sent at identical ms (`t=1780480708246`)
+
+---
+
 ## 2026-06-03 — BUG-001 investigation: delivery timeout root cause
 
 **Hypothesis / Question:** Why does `WaitForCurrentDesktopMoveRequest` in the DBus helper never
