@@ -962,6 +962,7 @@ const currentDesktopId = currentDesktop && currentDesktop.id
   const candidateWindows = getWorkspaceWindows();
   const matchingWindows = candidateWindows.filter((window) =>
     isNormalUserWindow(window) &&
+    window.resourceClass !== 'window-grid-kde' &&
     windowBelongsToActivity(window, currentActivityId) &&
     windowBelongsToDesktop(window, currentDesktopId)
   );

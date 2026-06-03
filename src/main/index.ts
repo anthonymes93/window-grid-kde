@@ -223,17 +223,32 @@ app.on('open-url', (event, rawUrl) => {
 const hideWindow = (): void => {
   const [mainWindow] = BrowserWindow.getAllWindows();
   if (!mainWindow) return;
-  mainWindow.setFullScreen(false);
   mainWindow.hide();
 };
 
-const toggleWindow = (): void => {
+const pinToAllActivities = async (mainWindow: import('electron').BrowserWindow): Promise<void> => {
+  try {
+    const handle = mainWindow.getNativeWindowHandle();
+    const winId = handle.length >= 8
+      ? Number(handle.readBigUInt64LE(0))
+      : handle.readUInt32LE(0);
+    await execFileAsync('xprop', ['-id', String(winId), '-remove', '_KDE_NET_WM_ACTIVITIES'], {
+      timeout: 2000
+    });
+  } catch {
+    // non-fatal
+  }
+};
+
+const toggleWindow = async (): Promise<void> => {
   const [mainWindow] = BrowserWindow.getAllWindows();
   if (!mainWindow) return;
 
   if (mainWindow.isVisible() && !mainWindow.isMinimized()) {
     hideWindow();
   } else {
+    await pinToAllActivities(mainWindow);
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     mainWindow.show();
     mainWindow.setFullScreen(true);
     mainWindow.focus();
@@ -242,7 +257,7 @@ const toggleWindow = (): void => {
 
 const kwinBridgeServer = createServer((request, response) => {
   if (request.method === 'POST' && request.url === '/toggle') {
-    toggleWindow();
+    void toggleWindow();
     sendJson(response, 200, { ok: true });
     return;
   }
