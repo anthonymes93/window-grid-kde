@@ -2,8 +2,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ActiveWindow, Activity, VirtualDesktop } from './types';
 
-console.log('window.kde', window.kde);
-
 type Selection = {
   activity: Activity;
   desktop: VirtualDesktop;
@@ -19,62 +17,32 @@ export function App(): JSX.Element {
   const [desktops, setDesktops] = useState<VirtualDesktop[]>([]);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [isLoadingActivities, setIsLoadingActivities] = useState(false);
-  const [activityError, setActivityError] = useState<string | null>(null);
   const [isLoadingDesktops, setIsLoadingDesktops] = useState(false);
-  const [desktopError, setDesktopError] = useState<string | null>(null);
   const [activeWindow, setActiveWindow] = useState<ActiveWindow | null>(null);
   const [isLoadingActiveWindow, setIsLoadingActiveWindow] = useState(false);
   const [isMovingWindow, setIsMovingWindow] = useState(false);
-  const [activeWindowError, setActiveWindowError] = useState<string | null>(null);
-  const [activeWindowRefreshTime, setActiveWindowRefreshTime] = useState<string>('Never');
   const [currentActivityId, setCurrentActivityId] = useState<string | null>(null);
   const [isLoadingCurrentActivity, setIsLoadingCurrentActivity] = useState(false);
-  const [isSwitchingActivity, setIsSwitchingActivity] = useState(false);
   const [isMoveAndSwitching, setIsMoveAndSwitching] = useState(false);
   const [isMovingActivityOnly, setIsMovingActivityOnly] = useState(false);
   const [isMovingCurrentDesktop, setIsMovingCurrentDesktop] = useState(false);
   const [isRestoringLayout, setIsRestoringLayout] = useState(false);
   const desktopCountRef = useRef(0);
-  const [eventLog, setEventLog] = useState<string[]>(['UI shell initialized.']);
-
-  useEffect(() => {
-    console.log(
-      '[LoadingState] initial — isMovingWindow:', false,
-      '| isMoveAndSwitching:', false,
-      '| isMovingActivityOnly:', false,
-      '| isMovingCurrentDesktop:', false
-    );
-  }, []);
+  const [eventLog, setEventLog] = useState<string[]>([]);
 
   const loadActivities = useCallback(async (): Promise<void> => {
     setIsLoadingActivities(true);
-    setActivityError(null);
-
     try {
       const nextActivities = await window.kde.getActivities();
       setActivities(nextActivities);
       setSelection((current) => {
         if (!current) return current;
-
-        const refreshedActivity = nextActivities.find(
-          (activity) => activity.id === current.activity.id
-        );
-
+        const refreshedActivity = nextActivities.find((a) => a.id === current.activity.id);
         return refreshedActivity ? { ...current, activity: refreshedActivity } : null;
       });
-
-      const idNameLines = nextActivities.map((a) => `  ${a.id} -> "${a.name}"`).join('\n');
-      console.log('Activity id -> name mapping:\n' + idNameLines);
-
-      setEventLog((current) => [
-        ...nextActivities.map((a) => `Activity: ${a.id} -> "${a.name}"`),
-        `Loaded ${nextActivities.length} activities`,
-        ...current
-      ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown KDE activity error.';
-      setActivityError(message);
-      setEventLog((current) => [`Failed to load KDE activities: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Failed to load activities: ${message}`, ...current]);
     } finally {
       setIsLoadingActivities(false);
     }
@@ -82,14 +50,11 @@ export function App(): JSX.Element {
 
   const loadCurrentActivity = useCallback(async (): Promise<void> => {
     setIsLoadingCurrentActivity(true);
-
     try {
       const activityId = await window.kde.getCurrentActivity();
       setCurrentActivityId(activityId);
-      setEventLog((current) => [`Current activity id: ${activityId}`, ...current]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error.';
-      setEventLog((current) => [`Failed to get current activity: ${message}`, ...current]);
+    } catch {
+      // cosmetic — silently ignore
     } finally {
       setIsLoadingCurrentActivity(false);
     }
@@ -97,65 +62,38 @@ export function App(): JSX.Element {
 
   const loadActiveWindow = useCallback(async (): Promise<void> => {
     setIsLoadingActiveWindow(true);
-    setActiveWindowError(null);
-
     try {
       const nextActiveWindow = await window.kde.getActiveWindow();
-      const refreshTime = new Date().toLocaleTimeString();
-
       setActiveWindow(nextActiveWindow);
-      setActiveWindowRefreshTime(refreshTime);
-      setEventLog((current) => [
-        `Selected window stored: ${nextActiveWindow.title} (${nextActiveWindow.id})`,
-        `Loaded active window: ${nextActiveWindow.title}`,
-        ...current
-      ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown active window error.';
-      setActiveWindowError(message);
-      setEventLog((current) => [`Failed to load active window: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Failed to load window: ${message}`, ...current]);
     } finally {
       setIsLoadingActiveWindow(false);
     }
   }, []);
 
-  const loadVirtualDesktops = useCallback(async (isManualRefresh = false): Promise<void> => {
+  const loadVirtualDesktops = useCallback(async (): Promise<void> => {
     setIsLoadingDesktops(true);
-    setDesktopError(null);
-
     const previousCount = desktopCountRef.current;
-
     try {
-      if (isManualRefresh) {
-        setEventLog((current) => ['Refreshing desktops...', ...current]);
-        await wait(250);
-      }
-
       const nextDesktops = await window.kde.getVirtualDesktops();
       desktopCountRef.current = nextDesktops.length;
       setDesktops(nextDesktops);
-
       setSelection((current) => {
         if (!current) return current;
-
-        const refreshedDesktop = nextDesktops.find(
-          (desktop) => desktop.id === current.desktop.id
-        );
-
+        const refreshedDesktop = nextDesktops.find((d) => d.id === current.desktop.id);
         return refreshedDesktop ? { ...current, desktop: refreshedDesktop } : null;
       });
-
-      const messages = [`Loaded ${nextDesktops.length} desktops`];
-
-      if (previousCount !== nextDesktops.length) {
-        messages.push(`Desktop count changed from ${previousCount} to ${nextDesktops.length}`);
+      if (previousCount > 0 && previousCount !== nextDesktops.length) {
+        setEventLog((current) => [
+          `Desktop count changed: ${previousCount} → ${nextDesktops.length}`,
+          ...current
+        ]);
       }
-
-      setEventLog((current) => [...messages, ...current]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown KDE desktop error.';
-      setDesktopError(message);
-      setEventLog((current) => [`Failed to load KDE virtual desktops: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Failed to load desktops: ${message}`, ...current]);
     } finally {
       setIsLoadingDesktops(false);
     }
@@ -169,90 +107,42 @@ export function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.kde.onSelectedWindowFromKwin((nextSelectedWindow) => {
-      const refreshTime = new Date().toLocaleTimeString();
-
       setActiveWindow(nextSelectedWindow);
-      setActiveWindowError(null);
-      setActiveWindowRefreshTime(refreshTime);
       setEventLog((current) => [
-        `Received KWin window: ${nextSelectedWindow.title} (${nextSelectedWindow.id})`,
+        `Window selected: ${nextSelectedWindow.title}`,
         ...current
       ]);
     });
-
     return unsubscribe;
   }, []);
 
   const selectedLabel = useMemo(() => {
-    if (!selection) return 'No target selected';
+    if (!selection) return null;
     return `${selection.activity.name} / ${selection.desktop.name}`;
   }, [selection]);
 
   const handleCellClick = (activity: Activity, desktop: VirtualDesktop): void => {
     setSelection({ activity, desktop });
-    setEventLog((current) => [`Selected ${activity.name} → ${desktop.name}`, ...current]);
   };
 
   const handleMoveActiveWindow = async (): Promise<void> => {
     if (!activeWindow || !selection) return;
-
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
 
-    console.log('[MOVE ACTIVE WINDOW] clicked', {
-      activeWindow: storedWindow,
-      targetActivity,
-      targetDesktop
-    });
-
-    console.log('[LoadingState] isMovingWindow → true');
     setIsMovingWindow(true);
-    setEventLog((current) => [
-      `[MOVE] Window: "${storedWindow.title}" (${storedWindow.id})`,
-      `[MOVE] Destination: activity "${targetActivity.name}" / desktop "${targetDesktop.name}"`,
-      ...current
-    ]);
-
     try {
       await window.kde.moveWindowToActivityAndDesktop(storedWindow.id, targetActivity.id, targetDesktop.id);
-
       setEventLog((current) => [
-        `[MOVE] Success: "${storedWindow.title}" -> "${targetActivity.name}" / "${targetDesktop.name}"`,
+        `✓ Moved "${storedWindow.title}" → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current
       ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown move error.';
-      setEventLog((current) => [`Move failed: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Move failed: ${message}`, ...current]);
     } finally {
-      console.log('[LoadingState] isMovingWindow → false');
       setIsMovingWindow(false);
-    }
-  };
-
-  const handleSwitchToSelectedActivity = async (): Promise<void> => {
-    if (!selection) return;
-
-    const targetActivity = selection.activity;
-
-    setIsSwitchingActivity(true);
-    setEventLog((current) => [
-      `[SWITCH] Switching to activity: "${targetActivity.name}" (${targetActivity.id})`,
-      ...current
-    ]);
-
-    try {
-      await window.kde.switchToActivity(targetActivity.id);
-      setCurrentActivityId(targetActivity.id);
-      setEventLog((current) => [
-        `[SWITCH] Now on activity: "${targetActivity.name}" (${targetActivity.id})`,
-        ...current
-      ]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown switch error.';
-      setEventLog((current) => [`Switch failed: ${message}`, ...current]);
-    } finally {
-      setIsSwitchingActivity(false);
     }
   };
 
@@ -261,63 +151,21 @@ export function App(): JSX.Element {
     activeWindow?.id !== 'unavailable' &&
     !isMovingWindow;
 
-  const canSwitchActivity = Boolean(selection) && !isSwitchingActivity;
-
   const handleMoveAndSwitch = async (): Promise<void> => {
     if (!activeWindow || !selection) return;
-
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
     const targetDesktopNumber = targetDesktop.index + 1;
 
-    console.log('[LoadingState] isMoveAndSwitching → true');
     setIsMoveAndSwitching(true);
-
     try {
-      const desktopBeforeNumber = await window.kde.getCurrentDesktopNumber();
-      const desktopBefore = desktops.find((d) => d.index + 1 === desktopBeforeNumber) ?? null;
-
-      setEventLog((current) => [
-        `[MOVE+SWITCH] --- BEGIN ---`,
-        `[MOVE+SWITCH] Window: "${storedWindow.title}" (${storedWindow.id})`,
-        `[MOVE+SWITCH] Source activity: "${currentActivity?.name ?? 'unknown'}" (${currentActivityId ?? 'unknown'})`,
-        `[MOVE+SWITCH] Source desktop: "${desktopBefore?.name ?? 'unknown'}" #${desktopBeforeNumber} (uuid: ${desktopBefore?.id ?? 'unknown'})`,
-        `[MOVE+SWITCH] Target activity: "${targetActivity.name}" (${targetActivity.id})`,
-        `[MOVE+SWITCH] Target desktop: "${targetDesktop.name}" #${targetDesktopNumber} (uuid: ${targetDesktop.id})`,
-        ...current
-      ]);
-
-      await window.kde.moveWindowToActivityAndDesktop(
-        storedWindow.id,
-        targetActivity.id,
-        targetDesktop.id
-      );
-
-      setEventLog((current) => [
-        `[MOVE+SWITCH] Move delivered to KWin. Waiting 500ms for KWin to process...`,
-        ...current
-      ]);
-
+      await window.kde.moveWindowToActivityAndDesktop(storedWindow.id, targetActivity.id, targetDesktop.id);
       await wait(500);
-
       await window.kde.switchToActivity(targetActivity.id);
       setCurrentActivityId(targetActivity.id);
-
-      setEventLog((current) => [
-        `[MOVE+SWITCH] Activity switch sent: "${targetActivity.name}". Waiting 300ms...`,
-        ...current
-      ]);
-
       await wait(300);
-
       await window.kde.switchToDesktopNumber(targetDesktopNumber);
-
-      setEventLog((current) => [
-        `[MOVE+SWITCH] Desktop switch sent: "${targetDesktop.name}" #${targetDesktopNumber}. Waiting 300ms...`,
-        ...current
-      ]);
-
       await wait(300);
 
       const [verifyActivityId, verifyDesktopNumber] = await Promise.all([
@@ -326,47 +174,25 @@ export function App(): JSX.Element {
       ]);
 
       if (verifyActivityId !== targetActivity.id) {
-        setEventLog((current) => [
-          `[MOVE+SWITCH] Activity mismatch after switch (got "${verifyActivityId}"), retrying...`,
-          ...current
-        ]);
         await window.kde.switchToActivity(targetActivity.id);
         setCurrentActivityId(targetActivity.id);
       }
 
       if (verifyDesktopNumber !== targetDesktopNumber) {
-        setEventLog((current) => [
-          `[MOVE+SWITCH] Desktop mismatch after switch (got #${verifyDesktopNumber}), retrying...`,
-          ...current
-        ]);
         await window.kde.switchToDesktopNumber(targetDesktopNumber);
       }
 
-      const [finalActivityId, finalDesktopNumber] = await Promise.all([
-        window.kde.getCurrentActivity(),
-        window.kde.getCurrentDesktopNumber()
-      ]);
-
-      const finalActivity = activities.find((a) => a.id === finalActivityId) ?? null;
-      const finalDesktop = desktops.find((d) => d.index + 1 === finalDesktopNumber) ?? null;
-      const success =
-        finalActivityId === targetActivity.id && finalDesktopNumber === targetDesktopNumber;
-
+      const finalActivityId = await window.kde.getCurrentActivity();
       setCurrentActivityId(finalActivityId);
 
       setEventLog((current) => [
-        `[MOVE+SWITCH] FINAL current activity: "${finalActivity?.name ?? 'unknown'}" (${finalActivityId})`,
-        `[MOVE+SWITCH] FINAL current desktop: "${finalDesktop?.name ?? 'unknown'}" #${finalDesktopNumber} (uuid: ${finalDesktop?.id ?? 'unknown'})`,
-        `[MOVE+SWITCH] EXPECTED activity: "${targetActivity.name}" (${targetActivity.id})`,
-        `[MOVE+SWITCH] EXPECTED desktop: "${targetDesktop.name}" #${targetDesktopNumber} (uuid: ${targetDesktop.id})`,
-        `[MOVE+SWITCH] SUCCESS=${success}`,
+        `✓ Moved "${storedWindow.title}" and switched → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current
       ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error.';
-      setEventLog((current) => [`[MOVE+SWITCH] Failed: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Move + switch failed: ${message}`, ...current]);
     } finally {
-      console.log('[LoadingState] isMoveAndSwitching → false');
       setIsMoveAndSwitching(false);
     }
   };
@@ -379,30 +205,20 @@ export function App(): JSX.Element {
 
   const handleMoveToActivityOnly = async (): Promise<void> => {
     if (!activeWindow || !selection) return;
-
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
 
-    console.log('[LoadingState] isMovingActivityOnly → true');
     setIsMovingActivityOnly(true);
-    setEventLog((current) => [
-      `[ACTIVITY-ONLY] Window: "${storedWindow.title}" (${storedWindow.id})`,
-      `[ACTIVITY-ONLY] Target activity: "${targetActivity.name}" (${targetActivity.id})`,
-      `[ACTIVITY-ONLY] No desktop change. Moving...`,
-      ...current
-    ]);
-
     try {
       await window.kde.moveWindowToActivityOnly(storedWindow.id, targetActivity.id);
       setEventLog((current) => [
-        `[ACTIVITY-ONLY] Dispatched. Watch KWin logs for VERIFY:500ms and VERIFY:2000ms.`,
+        `✓ Moved "${storedWindow.title}" to activity ${targetActivity.name}`,
         ...current
       ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error.';
-      setEventLog((current) => [`[ACTIVITY-ONLY] Failed: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Activity move failed: ${message}`, ...current]);
     } finally {
-      console.log('[LoadingState] isMovingActivityOnly → false');
       setIsMovingActivityOnly(false);
     }
   };
@@ -414,84 +230,48 @@ export function App(): JSX.Element {
 
   const handleMoveCurrentDesktop = async (): Promise<void> => {
     if (!selection) return;
-
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
     const targetDesktopNumber = targetDesktop.index + 1;
 
-    console.log('[LoadingState] isMovingCurrentDesktop → true');
     setIsMovingCurrentDesktop(true);
-
     try {
-      const [sourceActivityId, sourceDesktopNumber] = await Promise.all([
-        window.kde.getCurrentActivity(),
-        window.kde.getCurrentDesktopNumber()
-      ]);
-      const sourceActivity = activities.find((a) => a.id === sourceActivityId) ?? null;
-      const sourceDesktop = desktops.find((d) => d.index + 1 === sourceDesktopNumber) ?? null;
+      const sourceActivityId = await window.kde.getCurrentActivity();
       setCurrentActivityId(sourceActivityId);
 
-      setEventLog((current) => [
-        `[CURRENT-DESKTOP] --- BEGIN ---`,
-        `[CURRENT-DESKTOP] Source activity: "${sourceActivity?.name ?? 'unknown'}" (${sourceActivityId})`,
-        `[CURRENT-DESKTOP] Source desktop: "${sourceDesktop?.name ?? 'unknown'}" #${sourceDesktopNumber} (uuid: ${sourceDesktop?.id ?? 'unknown'})`,
-        `[CURRENT-DESKTOP] Target activity: "${targetActivity.name}" (${targetActivity.id})`,
-        `[CURRENT-DESKTOP] Target desktop: "${targetDesktop.name}" #${targetDesktopNumber} (uuid: ${targetDesktop.id})`,
-        ...current
-      ]);
-
-      await window.kde.moveCurrentDesktopToActivityAndDesktop(
-        targetActivity.id,
-        targetDesktop.id
-      );
-
-      setEventLog((current) => [
-        `[CURRENT-DESKTOP] Move delivered to KWin. Waiting 500ms for KWin to process...`,
-        ...current
-      ]);
-
+      await window.kde.moveCurrentDesktopToActivityAndDesktop(targetActivity.id, targetDesktop.id);
       await wait(500);
-
       await window.kde.switchToActivity(targetActivity.id);
       setCurrentActivityId(targetActivity.id);
-
-      setEventLog((current) => [
-        `[CURRENT-DESKTOP] Activity switch sent: "${targetActivity.name}". Waiting 300ms...`,
-        ...current
-      ]);
-
       await wait(300);
-
       await window.kde.switchToDesktopNumber(targetDesktopNumber);
-
-      setEventLog((current) => [
-        `[CURRENT-DESKTOP] Desktop switch sent: "${targetDesktop.name}" #${targetDesktopNumber}. Waiting 300ms...`,
-        ...current
-      ]);
-
       await wait(300);
 
-      const [finalActivityId, finalDesktopNumber] = await Promise.all([
+      const [verifyActivityId, verifyDesktopNumber] = await Promise.all([
         window.kde.getCurrentActivity(),
         window.kde.getCurrentDesktopNumber()
       ]);
-      const finalActivity = activities.find((a) => a.id === finalActivityId) ?? null;
-      const finalDesktop = desktops.find((d) => d.index + 1 === finalDesktopNumber) ?? null;
-      const success =
-        finalActivityId === targetActivity.id && finalDesktopNumber === targetDesktopNumber;
 
+      if (verifyActivityId !== targetActivity.id) {
+        await window.kde.switchToActivity(targetActivity.id);
+        setCurrentActivityId(targetActivity.id);
+      }
+
+      if (verifyDesktopNumber !== targetDesktopNumber) {
+        await window.kde.switchToDesktopNumber(targetDesktopNumber);
+      }
+
+      const finalActivityId = await window.kde.getCurrentActivity();
       setCurrentActivityId(finalActivityId);
+
       setEventLog((current) => [
-        `[CURRENT-DESKTOP] FINAL current activity: "${finalActivity?.name ?? 'unknown'}" (${finalActivityId})`,
-        `[CURRENT-DESKTOP] FINAL current desktop: "${finalDesktop?.name ?? 'unknown'}" #${finalDesktopNumber} (uuid: ${finalDesktop?.id ?? 'unknown'})`,
-        `[CURRENT-DESKTOP] SUCCESS=${success}`,
+        `✓ Desktop moved → ${targetActivity.name} / ${targetDesktop.name}`,
         ...current
       ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error.';
-      setEventLog((current) => [`[CURRENT-DESKTOP] Failed: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Desktop move failed: ${message}`, ...current]);
     } finally {
-      console.log('[LoadingState] isMovingCurrentDesktop → false');
       setIsMovingCurrentDesktop(false);
     }
   };
@@ -504,14 +284,12 @@ export function App(): JSX.Element {
 
   const handleRestoreLastLayout = async (): Promise<void> => {
     setIsRestoringLayout(true);
-    setEventLog((current) => ['[RESTORE LAYOUT] Triggering restore...', ...current]);
-
     try {
       await window.kde.restoreLastLayout();
-      setEventLog((current) => ['[RESTORE LAYOUT] Triggered.', ...current]);
+      setEventLog((current) => ['✓ Layout restored', ...current]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error.';
-      setEventLog((current) => [`[RESTORE LAYOUT] Failed: ${message}`, ...current]);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Restore failed: ${message}`, ...current]);
     } finally {
       setIsRestoringLayout(false);
     }
@@ -520,281 +298,174 @@ export function App(): JSX.Element {
   const canRestoreLayout = !isRestoringLayout && !isMovingCurrentDesktop;
 
   const currentActivity = activities.find((a) => a.id === currentActivityId) ?? null;
-  const selectedActivity = selection?.activity ?? null;
 
   return (
     <main className="app-shell">
       <header className="app-header">
-        <div>
-          <h1>Window Grid KDE</h1>
-          <p>KDE window routing by Activity and Virtual Desktop.</p>
+        <h1 className="app-title">Window Grid KDE</h1>
+        <div className="current-activity-pill">
+          <span>Activity</span>
+          <strong>{currentActivity?.name ?? '—'}</strong>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void loadCurrentActivity()}
+            disabled={isLoadingCurrentActivity}
+            title="Refresh current activity"
+          >
+            ↻
+          </button>
         </div>
       </header>
 
-      <section className="dashboard">
-        <aside className="side-panels" aria-label="Selection details">
-          <section className="panel selected-window-panel">
-            <div className="panel-heading">
-              <h2>Selected Window</h2>
-              <button
-                className="refresh-button"
-                type="button"
-                onClick={() => void loadActiveWindow()}
-                disabled={isLoadingActiveWindow}
-              >
-                Manual Refresh Active Window (fallback)
-              </button>
-            </div>
+      <div className={`window-card${activeWindow ? ' has-window' : ' window-card-empty'}`}>
+        <div className={`window-icon${activeWindow ? ' active' : ''}`}>⊡</div>
+        <div className="window-info">
+          <div className="window-title-text">
+            {activeWindow?.title ?? 'No window selected'}
+          </div>
+          <div className="window-meta">
+            {activeWindow
+              ? (activeWindow.windowClass ?? '')
+              : 'Right-click a window → "Open in Window Grid KDE"'}
+          </div>
+        </div>
+        <div className="window-card-right">
+          <div className={`target-badge${selectedLabel ? '' : ' empty'}`}>
+            {selectedLabel ?? 'No target'}
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => void loadActiveWindow()}
+            disabled={isLoadingActiveWindow}
+            title="Refresh active window"
+          >
+            ↻
+          </button>
+        </div>
+      </div>
 
-            {isLoadingActiveWindow && <p className="panel-status">Loading active window...</p>}
-            {activeWindowError && <p className="panel-error">{activeWindowError}</p>}
+      <div className="grid-section">
+        <div className="grid-header">
+          <span className="grid-header-title">Activity / Desktop Grid</span>
+          <button
+            className="icon-button"
+            type="button"
+            onClick={() => { void loadActivities(); void loadVirtualDesktops(); }}
+            disabled={isLoadingActivities || isLoadingDesktops}
+            title="Refresh grid"
+          >
+            ↻
+          </button>
+        </div>
+        <div className="grid-scroll" role="region" aria-label="Activity and desktop grid">
+          {(activities.length === 0 || desktops.length === 0) && !isLoadingDesktops && !isLoadingActivities ? (
+            <div className="empty-grid">No KDE activities or virtual desktops found</div>
+          ) : (
+            <div
+              className="target-grid"
+              style={{ gridTemplateColumns: `100px repeat(${desktops.length}, 108px)` }}
+            >
+              <div className="grid-corner" />
 
-            <dl className="window-details">
-              <div>
-                <dt>Title</dt>
-                <dd>{activeWindow?.title ?? 'Not loaded'}</dd>
-              </div>
-              <div>
-                <dt>Window Id</dt>
-                <dd>{activeWindow?.id ?? 'Not loaded'}</dd>
-              </div>
-              <div>
-                <dt>Window Class</dt>
-                <dd>{activeWindow?.windowClass ?? 'Unavailable'}</dd>
-              </div>
-              <div>
-                <dt>Desktop Ids</dt>
-                <dd>{activeWindow?.desktopIds?.join(', ') ?? 'Unavailable'}</dd>
-              </div>
-              <div>
-                <dt>Target</dt>
-                <dd>{selectedLabel}</dd>
-              </div>
-              <div>
-                <dt>Last Refresh</dt>
-                <dd>{activeWindowRefreshTime}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Current Activity</h2>
-              <button
-                className="refresh-button"
-                type="button"
-                onClick={() => void loadCurrentActivity()}
-                disabled={isLoadingCurrentActivity}
-              >
-                Refresh
-              </button>
-            </div>
-
-            {isLoadingCurrentActivity && <p className="panel-status">Loading...</p>}
-
-            <dl className="window-details">
-              <div>
-                <dt>Name</dt>
-                <dd>{currentActivity?.name ?? (currentActivityId ? '(name unknown)' : 'Not loaded')}</dd>
-              </div>
-              <div>
-                <dt>Id</dt>
-                <dd>{currentActivityId ?? 'Not loaded'}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Selected Activity</h2>
-              <button
-                className="refresh-button"
-                type="button"
-                onClick={() => void handleSwitchToSelectedActivity()}
-                disabled={!canSwitchActivity}
-              >
-                Switch To Selected Activity
-              </button>
-            </div>
-
-            <dl className="window-details">
-              <div>
-                <dt>Name</dt>
-                <dd>{selectedActivity?.name ?? 'None selected'}</dd>
-              </div>
-              <div>
-                <dt>Id</dt>
-                <dd>{selectedActivity?.id ?? 'None selected'}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Activities</h2>
-            </div>
-
-            {isLoadingActivities && <p className="panel-status">Loading KDE activities...</p>}
-            {activityError && <p className="panel-error">{activityError}</p>}
-
-            <div className="activity-list">
-              {activities.map((activity) => (
-                <span key={activity.id} title={activity.id}>
-                  {activity.name}
-                </span>
-              ))}
-            </div>
-          </section>
-
-          <section className="panel">
-            <div className="panel-heading">
-              <h2>Virtual Desktops</h2>
-              <button
-                className="refresh-button"
-                type="button"
-                onClick={() => void loadVirtualDesktops(true)}
-                disabled={isLoadingDesktops}
-              >
-                Refresh Desktops
-              </button>
-            </div>
-
-            {isLoadingDesktops && <p className="panel-status">Loading KDE desktops...</p>}
-            {desktopError && <p className="panel-error">{desktopError}</p>}
-
-            <div className="desktop-list">
               {desktops.map((desktop) => (
-                <span key={desktop.id} title={desktop.id}>
-                  {desktop.name}
-                </span>
+                <div className="desktop-header" key={desktop.id} title={desktop.id}>
+                  <span>{desktop.name}</span>
+                </div>
+              ))}
+
+              {activities.map((activity) => (
+                <div className="grid-row-fragment" key={activity.id}>
+                  <div className="activity-header" title={activity.id}>
+                    {activity.name}
+                  </div>
+
+                  {desktops.map((desktop) => {
+                    const isSelected =
+                      selection?.activity.id === activity.id &&
+                      selection.desktop.id === desktop.id;
+
+                    return (
+                      <button
+                        className={isSelected ? 'grid-cell selected' : 'grid-cell'}
+                        key={`${activity.id}-${desktop.id}`}
+                        type="button"
+                        onClick={() => handleCellClick(activity, desktop)}
+                        aria-pressed={isSelected}
+                        aria-label={`${activity.name}, ${desktop.name}`}
+                      >
+                        <span>{desktop.index + 1}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               ))}
             </div>
-          </section>
-        </aside>
+          )}
+        </div>
+      </div>
 
-        <section className="workspace">
-          <section className="panel grid-panel">
-            <div className="panel-heading">
-              <h2>Activity/Desktop Grid</h2>
-              <div className="grid-actions">
-                <span>{activities.length} activities x {desktops.length} desktops</span>
+      <div className="action-bar">
+        <button
+          className="action-btn primary"
+          type="button"
+          data-loading={String(isMovingWindow)}
+          onClick={() => void handleMoveActiveWindow()}
+          disabled={!canMoveActiveWindow}
+        >
+          Move Window
+        </button>
+        <button
+          className="action-btn primary"
+          type="button"
+          data-loading={String(isMoveAndSwitching)}
+          onClick={() => void handleMoveAndSwitch()}
+          disabled={!canMoveAndSwitch}
+        >
+          Move + Switch
+        </button>
+        <button
+          className="action-btn"
+          type="button"
+          data-loading={String(isMovingActivityOnly)}
+          onClick={() => void handleMoveToActivityOnly()}
+          disabled={!canMoveActivityOnly}
+        >
+          Activity Only
+        </button>
+        <button
+          className="action-btn"
+          type="button"
+          data-loading={String(isMovingCurrentDesktop)}
+          onClick={() => void handleMoveCurrentDesktop()}
+          disabled={!canMoveCurrentDesktop}
+        >
+          Move Desktop
+        </button>
+        <button
+          className="action-btn"
+          type="button"
+          data-loading={String(isRestoringLayout)}
+          onClick={() => void handleRestoreLastLayout()}
+          disabled={!canRestoreLayout}
+        >
+          Restore Layout
+        </button>
+      </div>
 
-                <button
-                  className="refresh-button"
-                  type="button"
-                  data-loading={String(isMovingWindow)}
-                  onClick={() => void handleMoveActiveWindow()}
-                  disabled={!canMoveActiveWindow}
-                >
-                  Move Active Window
-                </button>
-
-                <button
-                  className="refresh-button"
-                  type="button"
-                  data-loading={String(isMoveAndSwitching)}
-                  onClick={() => void handleMoveAndSwitch()}
-                  disabled={!canMoveAndSwitch}
-                >
-                  Move + Switch Activity
-                </button>
-
-                <button
-                  className="refresh-button"
-                  type="button"
-                  data-loading={String(isMovingActivityOnly)}
-                  onClick={() => void handleMoveToActivityOnly()}
-                  disabled={!canMoveActivityOnly}
-                >
-                  Activity Only
-                </button>
-
-                <button
-                  className="refresh-button"
-                  type="button"
-                  data-loading={String(isMovingCurrentDesktop)}
-                  onClick={() => void handleMoveCurrentDesktop()}
-                  disabled={!canMoveCurrentDesktop}
-                >
-                  Move Current Desktop
-                </button>
-
-                <button
-                  className="refresh-button"
-                  type="button"
-                  data-loading={String(isRestoringLayout)}
-                  onClick={() => void handleRestoreLastLayout()}
-                  disabled={!canRestoreLayout}
-                >
-                  Restore Last Layout
-                </button>
-              </div>
+      {eventLog.length > 0 && (
+        <div className="event-log-bar">
+          {eventLog.slice(0, 4).map((msg, i) => (
+            <div
+              key={`${msg}-${i}`}
+              className={`event-log-entry${msg.startsWith('✓') ? ' success' : msg.startsWith('✗') ? ' error' : ''}`}
+            >
+              {msg}
             </div>
-
-            <div className="grid-scroll" role="region" aria-label="Activity and desktop grid">
-              {(activities.length === 0 || desktops.length === 0) && !isLoadingDesktops && !isLoadingActivities ? (
-                <div className="empty-grid">
-                  {desktopError || activityError
-                    ? 'KDE grid data unavailable.'
-                    : 'No KDE activities or virtual desktops found.'}
-                </div>
-              ) : (
-                <div
-                  className="target-grid"
-                  style={{ gridTemplateColumns: `104px repeat(${desktops.length}, 112px)` }}
-                >
-                  <div className="grid-corner" />
-
-                  {desktops.map((desktop) => (
-                    <div className="desktop-header" key={desktop.id} title={desktop.id}>
-                      <span>{desktop.name}</span>
-                    </div>
-                  ))}
-
-                  {activities.map((activity) => (
-                    <div className="grid-row-fragment" key={activity.id}>
-                      <div className="activity-header" title={activity.id}>
-                        {activity.name}
-                      </div>
-
-                      {desktops.map((desktop) => {
-                        const isSelected =
-                          selection?.activity.id === activity.id &&
-                          selection.desktop.id === desktop.id;
-
-                        return (
-                          <button
-                            className={isSelected ? 'grid-cell selected' : 'grid-cell'}
-                            key={`${activity.id}-${desktop.id}`}
-                            type="button"
-                            onClick={() => handleCellClick(activity, desktop)}
-                            aria-pressed={isSelected}
-                            aria-label={`${activity.name}, ${desktop.name}`}
-                          >
-                            <span>{desktop.index + 1}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="panel event-log-panel">
-            <div className="panel-heading">
-              <h2>Event Log</h2>
-            </div>
-
-            <ol className="event-log">
-              {eventLog.map((message, index) => (
-                <li key={`${message}-${index}`}>{message}</li>
-              ))}
-            </ol>
-          </section>
-        </section>
-      </section>
+          ))}
+        </div>
+      )}
     </main>
   );
 }
