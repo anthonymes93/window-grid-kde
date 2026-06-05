@@ -17,8 +17,13 @@ PlasmoidItem {
     property int uiRevision: 0
     property string pendingActivityCommand: ""
     property string pendingLoadCommand: ""
+    property string pendingSaveCommand: ""
     property string pendingSwitchCommand: ""
+    property string pendingReorderCommand: ""
     property string hoveredDesktopTitle: ""
+    property int dragFromIndex: -1
+    property int dragTargetIndex: -1
+    property bool dragMoved: false
 
     readonly property int desktopMinWidth: Math.max(54, Kirigami.Units.gridUnit * 3)
     readonly property int desktopHeight: Math.max(24, Kirigami.Units.gridUnit * 1.35)
@@ -89,6 +94,12 @@ PlasmoidItem {
         }
     }
 
+    function saveNames() {
+        var json = JSON.stringify(activityDesktopNames, null, 2);
+        pendingSaveCommand = "sh -c " + shellQuote("mkdir -p \"$HOME/.config\"; printf %s " + shellQuote(json) + " > \"$HOME/.config/activity-desktop-names.json\"");
+        runCommand(pendingSaveCommand);
+    }
+
     function desktopName(index) {
         var names = activityDesktopNames[getCurrentActivityId()];
 
@@ -96,13 +107,13 @@ PlasmoidItem {
             return names[index];
         }
 
-        var desktopNames = virtualDesktopInfo.desktopNames || [];
+        return "Untitled";
+    }
 
-        if (desktopNames[index] && String(desktopNames[index]).length > 0) {
-            return String(desktopNames[index]);
-        }
+    function hasCustomDesktopName(index) {
+        var names = activityDesktopNames[getCurrentActivityId()];
 
-        return "Desktop " + (index + 1);
+        return Array.isArray(names) && typeof names[index] === "string" && names[index].length > 0;
     }
 
     function desktopId(index) {
@@ -121,6 +132,80 @@ PlasmoidItem {
 
         pendingSwitchCommand = "sh -c " + shellQuote("qdbus6 org.kde.KWin /KWin org.kde.KWin.setCurrentDesktop " + String(index + 1) + " 2>/dev/null || qdbus org.kde.KWin /KWin org.kde.KWin.setCurrentDesktop " + String(index + 1) + " 2>/dev/null || true");
         runCommand(pendingSwitchCommand);
+    }
+
+    function moveArrayItem(items, fromIndex, toIndex, count) {
+        var result = [];
+        for (var i = 0; i < count; i += 1) {
+            result.push(i < items.length ? items[i] : "");
+        }
+
+        var moved = result.splice(fromIndex, 1)[0];
+        result.splice(toIndex, 0, moved);
+        return result;
+    }
+
+    function reorderCurrentActivityNames(fromIndex, toIndex) {
+        var activityId = getCurrentActivityId();
+        if (activityId.length === 0 || fromIndex === toIndex) {
+            return;
+        }
+
+        var desktopCount = virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0;
+        var nextNames = JSON.parse(JSON.stringify(activityDesktopNames || {}));
+        var names = Array.isArray(nextNames[activityId]) ? nextNames[activityId] : [];
+        nextNames[activityId] = moveArrayItem(names, fromIndex, toIndex, desktopCount);
+        activityDesktopNames = nextNames;
+        saveNames();
+        updateUI();
+    }
+
+    function requestDesktopContentReorder(fromIndex, toIndex) {
+        if (pendingReorderCommand.length > 0 || fromIndex === toIndex) {
+            return;
+        }
+
+        pendingReorderCommand = "sh -c " + shellQuote(
+            "qdbus6 com.anthony.WindowGridKDE /WindowGridKDE com.anthony.WindowGridKDE.ReorderDesktopContents " +
+            shellQuote(String(fromIndex)) + " " +
+            shellQuote(String(toIndex)) + " " +
+            shellQuote(getCurrentActivityId()) +
+            " >/dev/null 2>&1 || qdbus com.anthony.WindowGridKDE /WindowGridKDE com.anthony.WindowGridKDE.ReorderDesktopContents " +
+            shellQuote(String(fromIndex)) + " " +
+            shellQuote(String(toIndex)) + " " +
+            shellQuote(getCurrentActivityId()) +
+            " >/dev/null 2>&1 || true"
+        );
+        runCommand(pendingReorderCommand);
+    }
+
+    function indexFromPagerX(x) {
+        var desktopCount = virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0;
+        for (var i = 0; i < desktopCount; i += 1) {
+            var item = desktopRepeater.itemAt(i);
+            if (!item) {
+                continue;
+            }
+
+            if (x < item.x + item.width / 2) {
+                return i;
+            }
+        }
+
+        return Math.max(0, desktopCount - 1);
+    }
+
+    function finishDrag(fromIndex, toIndex) {
+        dragFromIndex = -1;
+        dragTargetIndex = -1;
+        dragMoved = false;
+
+        if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+            return;
+        }
+
+        reorderCurrentActivityNames(fromIndex, toIndex);
+        requestDesktopContentReorder(fromIndex, toIndex);
     }
 
     function updateUI() {
@@ -166,9 +251,22 @@ PlasmoidItem {
                 return;
             }
 
+            if (sourceName === root.pendingSaveCommand) {
+                disconnectSource(sourceName);
+                root.pendingSaveCommand = "";
+                return;
+            }
+
             if (sourceName === root.pendingSwitchCommand) {
                 disconnectSource(sourceName);
                 root.pendingSwitchCommand = "";
+                root.updateUI();
+                return;
+            }
+
+            if (sourceName === root.pendingReorderCommand) {
+                disconnectSource(sourceName);
+                root.pendingReorderCommand = "";
                 root.updateUI();
                 return;
             }
@@ -204,6 +302,8 @@ PlasmoidItem {
         spacing: 1
 
         Repeater {
+            id: desktopRepeater
+
             model: virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0
 
             delegate: Rectangle {
@@ -215,6 +315,10 @@ PlasmoidItem {
                     return root.isCurrentDesktop(index);
                 }
                 readonly property string title: root.uiRevision >= 0 ? root.desktopName(index) : ""
+                readonly property bool hasCustomTitle: {
+                    root.uiRevision;
+                    return root.hasCustomDesktopName(index);
+                }
                 readonly property int windowCount: desktopTasks.count
 
                 width: Math.max(
@@ -224,8 +328,11 @@ PlasmoidItem {
                 height: root.desktopHeight
                 radius: 2
                 color: active ? Kirigami.Theme.highlightColor : Qt.rgba(0.12, 0.13, 0.14, 1)
+                opacity: root.dragFromIndex === index ? 0.68 : 1
                 border.width: 1
-                border.color: active ? Kirigami.Theme.focusColor : Qt.rgba(0.04, 0.05, 0.06, 1)
+                border.color: root.dragMoved && root.dragTargetIndex === index
+                    ? Kirigami.Theme.positiveTextColor
+                    : active ? Kirigami.Theme.focusColor : Qt.rgba(0.04, 0.05, 0.06, 1)
 
                 TaskManager.TasksModel {
                     id: desktopTasks
@@ -258,6 +365,7 @@ PlasmoidItem {
                         Layout.alignment: Qt.AlignVCenter
                         text: desktopButton.title
                         color: desktopButton.active ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+                        opacity: desktopButton.hasCustomTitle ? 1 : 0.2
                         elide: Text.ElideNone
                         font.pixelSize: Math.max(10, Math.round(Kirigami.Theme.defaultFont.pixelSize * 0.82))
                         font.bold: desktopButton.active
@@ -298,9 +406,12 @@ PlasmoidItem {
                 }
 
                 MouseArea {
+                    id: desktopMouseArea
+
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    property real pressXInRow: 0
 
                     PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                     PlasmaComponents3.ToolTip.visible: containsMouse
@@ -310,7 +421,48 @@ PlasmoidItem {
                         root.hoveredDesktopTitle = containsMouse ? PlasmaComponents3.ToolTip.text : "";
                     }
 
-                    onClicked: root.switchToDesktop(desktopButton.index)
+                    onPressed: function(mouse) {
+                        pressXInRow = desktopButton.x + mouse.x;
+                        root.dragFromIndex = desktopButton.index;
+                        root.dragTargetIndex = desktopButton.index;
+                        root.dragMoved = false;
+                    }
+
+                    onPositionChanged: function(mouse) {
+                        if (root.dragFromIndex < 0) {
+                            return;
+                        }
+
+                        var currentX = desktopButton.x + mouse.x;
+                        if (Math.abs(currentX - pressXInRow) > 8) {
+                            root.dragMoved = true;
+                        }
+
+                        if (root.dragMoved) {
+                            root.dragTargetIndex = root.indexFromPagerX(currentX);
+                        }
+                    }
+
+                    onReleased: function(mouse) {
+                        var fromIndex = root.dragFromIndex;
+                        var toIndex = root.dragMoved ? root.indexFromPagerX(desktopButton.x + mouse.x) : fromIndex;
+
+                        if (root.dragMoved) {
+                            root.finishDrag(fromIndex, toIndex);
+                            return;
+                        }
+
+                        root.dragFromIndex = -1;
+                        root.dragTargetIndex = -1;
+                        root.dragMoved = false;
+                        root.switchToDesktop(desktopButton.index);
+                    }
+
+                    onCanceled: {
+                        root.dragFromIndex = -1;
+                        root.dragTargetIndex = -1;
+                        root.dragMoved = false;
+                    }
                 }
             }
         }

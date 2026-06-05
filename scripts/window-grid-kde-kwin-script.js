@@ -849,7 +849,19 @@ function isNormalUserWindow(window) {
 }
 
 function windowBelongsToActivity(window, activityId) {
-  const activities = Array.isArray(window.activities) ? window.activities : [];
+  let activities = [];
+
+  if (Array.isArray(window.activities)) {
+    activities = window.activities;
+  } else if (
+    window.activities &&
+    typeof window.activities.length === 'number' &&
+    Number.isFinite(window.activities.length)
+  ) {
+    for (let i = 0; i < window.activities.length; i += 1) {
+      activities.push(String(window.activities[i]));
+    }
+  }
 
   if (activities.length === 0) {
     return true;
@@ -1088,6 +1100,178 @@ function runRestoreLayout() {
   }
 }
 
+function makeDesktopReorderIndexMap(count, fromIndex, toIndex) {
+  const map = {};
+  for (let i = 0; i < count; i++) {
+    map[i] = i;
+  }
+
+  if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= count || toIndex >= count) {
+    return map;
+  }
+
+  if (fromIndex < toIndex) {
+    for (let i = fromIndex + 1; i <= toIndex; i++) {
+      map[i] = i - 1;
+    }
+    map[fromIndex] = toIndex;
+  } else {
+    for (let i = toIndex; i < fromIndex; i++) {
+      map[i] = i + 1;
+    }
+    map[fromIndex] = toIndex;
+  }
+
+  return map;
+}
+
+function findDesktopIndexById(desktops, desktopId) {
+  for (let i = 0; i < desktops.length; i++) {
+    if (getId(desktops[i]) === desktopId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function uniqueDesktops(desktops) {
+  const seen = {};
+  const result = [];
+
+  for (let i = 0; i < desktops.length; i++) {
+    const desktop = desktops[i];
+    const id = getId(desktop);
+    if (!id || seen[id]) {
+      continue;
+    }
+    seen[id] = true;
+    result.push(desktop);
+  }
+
+  return result;
+}
+
+function handleDesktopReorderContents(fromIndexText, toIndexText, activityId, requestId) {
+  const fromIndex = parseInt(fromIndexText, 10);
+  const toIndex = parseInt(toIndexText, 10);
+  const desktops = getWorkspaceDesktops();
+
+  if (!activityId || !Number.isFinite(fromIndex) || !Number.isFinite(toIndex) || fromIndex === toIndex) {
+    return;
+  }
+
+  if (fromIndex < 0 || toIndex < 0 || fromIndex >= desktops.length || toIndex >= desktops.length) {
+    log('[DESKTOP REORDER] invalid indices requestId=' + requestId + ' from=' + fromIndex + ' to=' + toIndex + ' count=' + desktops.length);
+    return;
+  }
+
+  const indexMap = makeDesktopReorderIndexMap(desktops.length, fromIndex, toIndex);
+  const currentDesktop = workspace.currentDesktop;
+  const currentDesktopIndex = currentDesktop ? findDesktopIndexById(desktops, getId(currentDesktop)) : -1;
+  const nextCurrentDesktopIndex = currentDesktopIndex >= 0 ? indexMap[currentDesktopIndex] : -1;
+  const windows = getWorkspaceWindows();
+  const restoreEntries = [];
+  let movedCount = 0;
+
+  log('[DESKTOP REORDER] start requestId=' + requestId + ' from=' + fromIndex + ' to=' + toIndex + ' activity=' + activityId);
+
+  for (let i = 0; i < windows.length; i++) {
+    const window = windows[i];
+    if (!isNormalUserWindow(window)) continue;
+    if (window.resourceClass === 'window-grid-kde') continue;
+    if (window.onAllDesktops) continue;
+    if (!windowBelongsToActivity(window, activityId)) continue;
+
+    const originalDesktops = resolveWindowDesktops(window);
+    if (originalDesktops.length === 0) continue;
+
+    let changed = false;
+    const nextDesktops = [];
+    for (let di = 0; di < originalDesktops.length; di++) {
+      const originalDesktop = originalDesktops[di];
+      const originalIndex = findDesktopIndexById(desktops, getId(originalDesktop));
+      if (originalIndex < 0) {
+        nextDesktops.push(originalDesktop);
+        continue;
+      }
+
+      const mappedIndex = indexMap[originalIndex];
+      const nextDesktop = desktops[mappedIndex];
+      nextDesktops.push(nextDesktop);
+      if (mappedIndex !== originalIndex) {
+        changed = true;
+      }
+    }
+
+    if (!changed) continue;
+
+    const geo = window.frameGeometry;
+    const savedGeo = geo ? { x: geo.x, y: geo.y, width: geo.width, height: geo.height } : null;
+    const maximizeMode = window.maximizeMode !== undefined ? window.maximizeMode : 0;
+    const fullScreen = window.fullScreen !== undefined
+      ? Boolean(window.fullScreen)
+      : (window.fullscreen !== undefined ? Boolean(window.fullscreen) : false);
+    const isMaximized = (typeof maximizeMode === 'number' && maximizeMode !== 0) || maximizeMode === true;
+
+    try {
+      window.desktops = uniqueDesktops(nextDesktops);
+      movedCount++;
+      if (savedGeo && !isMaximized && !fullScreen) {
+        restoreEntries.push({ window, caption: getCaption(window), x: savedGeo.x, y: savedGeo.y, width: savedGeo.width, height: savedGeo.height });
+      }
+    } catch (error) {
+      log('[DESKTOP REORDER] failed to move "' + getCaption(window) + '": ' + error);
+    }
+  }
+
+  if (nextCurrentDesktopIndex >= 0 && nextCurrentDesktopIndex !== currentDesktopIndex) {
+    try {
+      workspace.currentDesktop = desktops[nextCurrentDesktopIndex];
+      log('[DESKTOP REORDER] current desktop followed from=' + currentDesktopIndex + ' to=' + nextCurrentDesktopIndex + ' requestId=' + requestId);
+    } catch (error) {
+      log('[DESKTOP REORDER] failed to switch current desktop requestId=' + requestId + ': ' + error);
+    }
+  }
+
+  lastBulkMoveLayout = restoreEntries;
+  if (lastBulkMoveLayout.length > 0) {
+    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-desktop-reorder-restore', '', '800', function() {
+      runRestoreLayout();
+      log('[DESKTOP REORDER] restore complete requestId=' + requestId);
+    });
+  }
+
+  log('[DESKTOP REORDER] moved windows=' + movedCount + ' restoreEntries=' + restoreEntries.length + ' requestId=' + requestId);
+}
+
+function waitForDesktopReorderRequest() {
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[DESKTOP REORDER] watchdog fired — re-arming');
+        waitForDesktopReorderRequest();
+      }
+    }, 15000);
+  } catch (e) {}
+
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'WaitForDesktopReorderRequest', function(fromIndex, toIndex, activityId, requestId) {
+    if (handled) return;
+    handled = true;
+    try { clearTimeout(watchdogId); } catch (e) {}
+    if (requestId) {
+      try {
+        handleDesktopReorderContents(fromIndex, toIndex, activityId, requestId);
+      } catch (error) {
+        log('[DESKTOP REORDER] failed requestId=' + requestId + ': ' + error);
+      }
+    }
+    waitForDesktopReorderRequest();
+  });
+}
+
 function waitForRestoreLayoutRequest() {
   log('[SECTION 2] WaitForRestoreLayoutRequest: callDBus sent at t=' + Date.now());
 
@@ -1246,4 +1430,5 @@ waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();
 waitForWindowCountsRequest();
 waitForCloseAllRequest();
+waitForDesktopReorderRequest();
 callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});
