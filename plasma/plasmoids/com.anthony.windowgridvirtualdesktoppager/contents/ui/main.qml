@@ -15,11 +15,14 @@ PlasmoidItem {
     property string currentActivityId: ""
     property var activityDesktopNames: ({})
     property int uiRevision: 0
+    property int editingDesktopIndex: -1
+    property string editingActivityId: ""
     property string pendingActivityCommand: ""
     property string pendingLoadCommand: ""
     property string pendingSaveCommand: ""
     property string pendingSwitchCommand: ""
     property string pendingReorderCommand: ""
+    property string pendingRenameCommand: ""
     property string hoveredDesktopTitle: ""
     property int dragFromIndex: -1
     property int dragTargetIndex: -1
@@ -34,7 +37,7 @@ PlasmoidItem {
     Layout.preferredHeight: desktopHeight
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
-    toolTipMainText: hoveredDesktopTitle
+    toolTipMainText: ""
     toolTipSubText: ""
 
     function shellQuote(value) {
@@ -114,6 +117,43 @@ PlasmoidItem {
         var names = activityDesktopNames[getCurrentActivityId()];
 
         return Array.isArray(names) && typeof names[index] === "string" && names[index].length > 0;
+    }
+
+    function saveName(activityId, index, name) {
+        if (activityId.length === 0 || index < 0) {
+            return;
+        }
+
+        var desktopCount = virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0;
+        var nextNames = JSON.parse(JSON.stringify(activityDesktopNames || {}));
+        var names = Array.isArray(nextNames[activityId]) ? nextNames[activityId] : [];
+
+        while (names.length < desktopCount) {
+            names.push("");
+        }
+
+        names[index] = String(name).trim();
+        nextNames[activityId] = names;
+        activityDesktopNames = nextNames;
+        saveNames();
+        updateUI();
+    }
+
+    function openRenameWindow(index) {
+        if (pendingRenameCommand.length > 0) {
+            return;
+        }
+
+        editingDesktopIndex = index;
+        editingActivityId = getCurrentActivityId();
+
+        var currentName = hasCustomDesktopName(index) ? desktopName(index) : "";
+        pendingRenameCommand = "sh -c " + shellQuote(
+            "kdialog --title " + shellQuote("Rename Desktop") +
+            " --inputbox " + shellQuote("Desktop name:") +
+            " " + shellQuote(currentName)
+        );
+        runCommand(pendingRenameCommand);
     }
 
     function desktopId(index) {
@@ -271,6 +311,19 @@ PlasmoidItem {
                 return;
             }
 
+            if (sourceName === root.pendingRenameCommand) {
+                var exitCode = Number(data["exit code"]);
+                disconnectSource(sourceName);
+                root.pendingRenameCommand = "";
+                if (exitCode === 0) {
+                    root.saveName(root.editingActivityId, root.editingDesktopIndex, stdout);
+                }
+                root.editingDesktopIndex = -1;
+                root.editingActivityId = "";
+                root.updateUI();
+                return;
+            }
+
             disconnectSource(sourceName);
         }
     }
@@ -320,6 +373,7 @@ PlasmoidItem {
                     return root.hasCustomDesktopName(index);
                 }
                 readonly property int windowCount: desktopTasks.count
+                readonly property bool editing: root.editingDesktopIndex === index
 
                 width: Math.max(
                     root.desktopMinWidth,
@@ -409,19 +463,20 @@ PlasmoidItem {
                     id: desktopMouseArea
 
                     anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                    enabled: !desktopButton.editing
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
                     property real pressXInRow: 0
 
-                    PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
-                    PlasmaComponents3.ToolTip.visible: containsMouse
-                    PlasmaComponents3.ToolTip.text: desktopButton.title + " · " + desktopButton.windowCount + " windows"
-
-                    onContainsMouseChanged: {
-                        root.hoveredDesktopTitle = containsMouse ? PlasmaComponents3.ToolTip.text : "";
-                    }
-
                     onPressed: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            root.dragFromIndex = -1;
+                            root.dragTargetIndex = -1;
+                            root.dragMoved = false;
+                            return;
+                        }
+
                         pressXInRow = desktopButton.x + mouse.x;
                         root.dragFromIndex = desktopButton.index;
                         root.dragTargetIndex = desktopButton.index;
@@ -444,6 +499,14 @@ PlasmoidItem {
                     }
 
                     onReleased: function(mouse) {
+                        if (mouse.button === Qt.RightButton) {
+                            root.dragFromIndex = -1;
+                            root.dragTargetIndex = -1;
+                            root.dragMoved = false;
+                            root.openRenameWindow(desktopButton.index);
+                            return;
+                        }
+
                         var fromIndex = root.dragFromIndex;
                         var toIndex = root.dragMoved ? root.indexFromPagerX(desktopButton.x + mouse.x) : fromIndex;
 
