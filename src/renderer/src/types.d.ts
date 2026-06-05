@@ -43,6 +43,12 @@ declare global {
       hideWindow: () => Promise<void>;
       getWindowCounts: () => Promise<Record<string, number>>;
       requestWindowCounts: () => Promise<void>;
+      getActivityDesktopNames: () => Promise<Record<string, string[]>>;
+      updateActivityDesktopName: (
+        activityId: string,
+        desktopIndex: number,
+        name: string
+      ) => Promise<Record<string, string[]>>;
       onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => () => void;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;
     };

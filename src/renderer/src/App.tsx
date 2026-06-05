@@ -1,16 +1,25 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { ActiveWindow, Activity, VirtualDesktop } from './types';
 
 type Selection = {
   activity: Activity;
+  activityRowIndex: number;
   desktop: VirtualDesktop;
+  desktopColumnIndex: number;
 };
 
 const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });
+
+const makeActivityRenderKey = (activity: Activity, activityRowIndex: number): string =>
+  `activity-row:${activityRowIndex}:${activity.index}:${activity.id}:${activity.name}`;
+
+const makeDesktopRenderKey = (desktop: VirtualDesktop, desktopColumnIndex: number): string =>
+  `desktop-column:${desktopColumnIndex}:${desktop.index}:${desktop.id}`;
 
 export function App(): JSX.Element {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -30,6 +39,7 @@ export function App(): JSX.Element {
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [windowCounts, setWindowCounts] = useState<Record<string, number>>({});
+  const [activityDesktopNames, setActivityDesktopNames] = useState<Record<string, string[]>>({});
 
   const loadActivities = useCallback(async (): Promise<void> => {
     setIsLoadingActivities(true);
@@ -38,8 +48,10 @@ export function App(): JSX.Element {
       setActivities(nextActivities);
       setSelection((current) => {
         if (!current) return current;
-        const refreshedActivity = nextActivities.find((a) => a.id === current.activity.id);
-        return refreshedActivity ? { ...current, activity: refreshedActivity } : null;
+        const refreshedActivity = nextActivities[current.activityRowIndex];
+        return refreshedActivity
+          ? { ...current, activity: refreshedActivity }
+          : null;
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -83,8 +95,10 @@ export function App(): JSX.Element {
       setDesktops(nextDesktops);
       setSelection((current) => {
         if (!current) return current;
-        const refreshedDesktop = nextDesktops.find((d) => d.id === current.desktop.id);
-        return refreshedDesktop ? { ...current, desktop: refreshedDesktop } : null;
+        const refreshedDesktop = nextDesktops[current.desktopColumnIndex];
+        return refreshedDesktop
+          ? { ...current, desktop: refreshedDesktop }
+          : null;
       });
       if (previousCount > 0 && previousCount !== nextDesktops.length) {
         setEventLog((current) => [
@@ -104,10 +118,23 @@ export function App(): JSX.Element {
     try {
       const stored = await window.kde.getWindowCounts();
       if (Object.keys(stored).length > 0) setWindowCounts(stored);
-    } catch {}
+    } catch (error) {
+      console.debug('Unable to load cached window counts', error);
+    }
     try {
       await window.kde.requestWindowCounts();
-    } catch {}
+    } catch (error) {
+      console.debug('Unable to request window counts', error);
+    }
+  }, []);
+
+  const loadActivityDesktopNames = useCallback(async (): Promise<void> => {
+    try {
+      const names = await window.kde.getActivityDesktopNames();
+      setActivityDesktopNames(names);
+    } catch (error) {
+      console.debug('Unable to load activity desktop names', error);
+    }
   }, []);
 
   useEffect(() => {
@@ -115,7 +142,14 @@ export function App(): JSX.Element {
     void loadVirtualDesktops();
     void loadCurrentActivity();
     void loadWindowCounts();
-  }, [loadActivities, loadVirtualDesktops, loadCurrentActivity, loadWindowCounts]);
+    void loadActivityDesktopNames();
+  }, [
+    loadActivities,
+    loadVirtualDesktops,
+    loadCurrentActivity,
+    loadWindowCounts,
+    loadActivityDesktopNames
+  ]);
 
   useEffect(() => {
     const unsubscribe = window.kde.onWindowCountsUpdated((counts) => {
@@ -137,11 +171,64 @@ export function App(): JSX.Element {
 
   const selectedLabel = useMemo(() => {
     if (!selection) return null;
-    return `${selection.activity.name} / ${selection.desktop.name}`;
-  }, [selection]);
+    const desktopTitle =
+      activityDesktopNames[selection.activity.id]?.[selection.desktop.index]?.trim() ||
+      selection.desktop.name;
+    return `${selection.activity.name} / ${desktopTitle}`;
+  }, [activityDesktopNames, selection]);
 
-  const handleCellClick = (activity: Activity, desktop: VirtualDesktop): void => {
-    setSelection({ activity, desktop });
+  const getDesktopTitle = (
+    activity: Activity,
+    desktop: VirtualDesktop
+  ): string => {
+    return activityDesktopNames[activity.id]?.[desktop.index] ?? desktop.name;
+  };
+
+  const handleDesktopTitleChange = (
+    activity: Activity,
+    desktop: VirtualDesktop,
+    title: string
+  ): void => {
+    setActivityDesktopNames((current) => {
+      const next = { ...current };
+      const names = [...(next[activity.id] ?? [])];
+
+      while (names.length <= desktop.index) {
+        names.push('');
+      }
+
+      names[desktop.index] = title;
+      next[activity.id] = names;
+      return next;
+    });
+
+    void window.kde
+      .updateActivityDesktopName(activity.id, desktop.index, title)
+      .then((names) => setActivityDesktopNames(names))
+      .catch((error) => {
+        console.debug('Unable to save activity desktop name', error);
+      });
+  };
+
+  const handleCellClick = (
+    activity: Activity,
+    activityRowIndex: number,
+    desktop: VirtualDesktop,
+    desktopColumnIndex: number
+  ): void => {
+    setSelection({ activity, activityRowIndex, desktop, desktopColumnIndex });
+  };
+
+  const handleCellKeyDown = (
+    event: KeyboardEvent<HTMLDivElement>,
+    activity: Activity,
+    activityRowIndex: number,
+    desktop: VirtualDesktop,
+    desktopColumnIndex: number
+  ): void => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handleCellClick(activity, activityRowIndex, desktop, desktopColumnIndex);
   };
 
   const handleMoveActiveWindow = async (): Promise<void> => {
@@ -149,12 +236,13 @@ export function App(): JSX.Element {
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
+    const targetDesktopTitle = getDesktopTitle(targetActivity, targetDesktop);
 
     setIsMovingWindow(true);
     try {
       await window.kde.moveWindowToActivityAndDesktop(storedWindow.id, targetActivity.id, targetDesktop.id);
       setEventLog((current) => [
-        `✓ Moved "${storedWindow.title}" → ${targetActivity.name} / ${targetDesktop.name}`,
+        `✓ Moved "${storedWindow.title}" → ${targetActivity.name} / ${targetDesktopTitle}`,
         ...current
       ]);
     } catch (error) {
@@ -175,6 +263,7 @@ export function App(): JSX.Element {
     const storedWindow = activeWindow;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
+    const targetDesktopTitle = getDesktopTitle(targetActivity, targetDesktop);
     const targetDesktopNumber = targetDesktop.index + 1;
 
     setIsMoveAndSwitching(true);
@@ -206,7 +295,7 @@ export function App(): JSX.Element {
       setCurrentActivityId(finalActivityId);
 
       setEventLog((current) => [
-        `✓ Moved "${storedWindow.title}" and switched → ${targetActivity.name} / ${targetDesktop.name}`,
+        `✓ Moved "${storedWindow.title}" and switched → ${targetActivity.name} / ${targetDesktopTitle}`,
         ...current
       ]);
     } catch (error) {
@@ -252,13 +341,14 @@ export function App(): JSX.Element {
     if (!selection) return;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
+    const targetDesktopTitle = getDesktopTitle(targetActivity, targetDesktop);
 
     setIsMovingCurrentDesktop(true);
     void window.kde.hideWindow();
     try {
       await window.kde.moveCurrentDesktopToActivityAndDesktop(targetActivity.id, targetDesktop.id);
       setEventLog((current) => [
-        `✓ Desktop moved → ${targetActivity.name} / ${targetDesktop.name}`,
+        `✓ Desktop moved → ${targetActivity.name} / ${targetDesktopTitle}`,
         ...current
       ]);
     } catch (error) {
@@ -279,13 +369,14 @@ export function App(): JSX.Element {
     if (!selection) return;
     const targetActivity = selection.activity;
     const targetDesktop = selection.desktop;
+    const targetDesktopTitle = getDesktopTitle(targetActivity, targetDesktop);
     const targetDesktopNumber = targetDesktop.index + 1;
     try {
       await window.kde.switchToActivity(targetActivity.id);
       setCurrentActivityId(targetActivity.id);
       await window.kde.switchToDesktopNumber(targetDesktopNumber);
       setEventLog((current) => [
-        `✓ Switched to ${targetActivity.name} / ${targetDesktop.name}`,
+        `✓ Switched to ${targetActivity.name} / ${targetDesktopTitle}`,
         ...current
       ]);
     } catch (error) {
@@ -336,6 +427,7 @@ export function App(): JSX.Element {
               void loadActivities();
               void loadVirtualDesktops();
               void loadWindowCounts();
+              void loadActivityDesktopNames();
             }}
             disabled={isLoadingCurrentActivity || isLoadingActivities || isLoadingDesktops}
             title="Refresh"
@@ -379,7 +471,12 @@ export function App(): JSX.Element {
           <button
             className="icon-button"
             type="button"
-            onClick={() => { void loadActivities(); void loadVirtualDesktops(); void loadWindowCounts(); }}
+            onClick={() => {
+              void loadActivities();
+              void loadVirtualDesktops();
+              void loadWindowCounts();
+              void loadActivityDesktopNames();
+            }}
             disabled={isLoadingActivities || isLoadingDesktops}
             title="Refresh grid"
           >
@@ -396,38 +493,80 @@ export function App(): JSX.Element {
             >
               <div className="grid-corner" />
 
-              {desktops.map((desktop) => (
-                <div className="desktop-header" key={desktop.id} title={desktop.id}>
+              {desktops.map((desktop, desktopColumnIndex) => (
+                <div
+                  className="desktop-header"
+                  key={makeDesktopRenderKey(desktop, desktopColumnIndex)}
+                  title={desktop.id}
+                >
                   <span>{desktop.name}</span>
                 </div>
               ))}
 
-              {activities.map((activity) => (
-                <div className="grid-row-fragment" key={activity.id}>
+              {activities.map((activity, activityRowIndex) => (
+                <div
+                  className="grid-row-fragment"
+                  key={makeActivityRenderKey(activity, activityRowIndex)}
+                >
                   <div className="activity-header" title={activity.id}>
                     {activity.name}
                   </div>
 
-                  {desktops.map((desktop) => {
+                  {desktops.map((desktop, desktopColumnIndex) => {
                     const isSelected =
                       selection?.activity.id === activity.id &&
-                      selection.desktop.id === desktop.id;
+                      selection.activityRowIndex === activityRowIndex &&
+                      selection.desktop.id === desktop.id &&
+                      selection.desktopColumnIndex === desktopColumnIndex;
 
+                    const desktopTitle = getDesktopTitle(activity, desktop);
                     const count = windowCounts[`${activity.id}|${desktop.id}`] ?? 0;
                     const MAX_THUMBS = 7;
                     const thumbs = Math.min(count, MAX_THUMBS);
                     const overflow = count > MAX_THUMBS ? count - MAX_THUMBS : 0;
 
                     return (
-                      <button
+                      <div
                         className={isSelected ? 'grid-cell selected' : 'grid-cell'}
-                        key={`${activity.id}-${desktop.id}`}
-                        type="button"
-                        onClick={() => handleCellClick(activity, desktop)}
+                        key={`${makeActivityRenderKey(
+                          activity,
+                          activityRowIndex
+                        )}-${makeDesktopRenderKey(desktop, desktopColumnIndex)}`}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() =>
+                          handleCellClick(activity, activityRowIndex, desktop, desktopColumnIndex)
+                        }
+                        onKeyDown={(event) =>
+                          handleCellKeyDown(
+                            event,
+                            activity,
+                            activityRowIndex,
+                            desktop,
+                            desktopColumnIndex
+                          )
+                        }
                         aria-pressed={isSelected}
-                        aria-label={`${activity.name}, ${desktop.name}, ${count} windows`}
+                        aria-label={`${activity.name}, ${desktopTitle}, ${count} windows`}
                       >
                         <span className="cell-num">{desktop.index + 1}</span>
+                        <input
+                          className="cell-title-input"
+                          type="text"
+                          value={desktopTitle}
+                          title={`${activity.name} / ${desktopTitle}`}
+                          aria-label={`Title for ${activity.name}, desktop ${desktop.index + 1}`}
+                          onChange={(event) =>
+                            handleDesktopTitleChange(
+                              activity,
+                              desktop,
+                              event.target.value
+                            )
+                          }
+                          onClick={(event) => event.stopPropagation()}
+                          onFocus={(event) => event.currentTarget.select()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        />
                         {count > 0 && (
                           <div className="cell-windows">
                             {Array.from({ length: thumbs }).map((_, i) => (
@@ -438,7 +577,7 @@ export function App(): JSX.Element {
                             )}
                           </div>
                         )}
-                      </button>
+                      </div>
                     );
                   })}
                 </div>

@@ -2,6 +2,8 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 
 const require = createRequire(import.meta.url);
@@ -35,6 +37,8 @@ type KwinWindowPayload = {
   desktopIds: string[];
 };
 
+type ActivityDesktopNames = Record<string, string[]>;
+
 const unavailableActiveWindow: ActiveWindow = {
   id: 'unavailable',
   title: 'No active window detected',
@@ -58,6 +62,67 @@ const runCommand = async (command: string, args: string[]): Promise<string> => {
   });
 
   return stdout.trim();
+};
+
+const activityDesktopNamesPath = join(homedir(), '.config', 'activity-desktop-names.json');
+
+const normalizeActivityDesktopNames = (value: unknown): ActivityDesktopNames => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  const names: ActivityDesktopNames = {};
+
+  for (const [activityId, desktopNames] of Object.entries(value)) {
+    if (!Array.isArray(desktopNames)) continue;
+
+    names[activityId] = desktopNames.map((desktopName) =>
+      typeof desktopName === 'string' ? desktopName : ''
+    );
+  }
+
+  return names;
+};
+
+const readActivityDesktopNames = async (): Promise<ActivityDesktopNames> => {
+  try {
+    const raw = await readFile(activityDesktopNamesPath, 'utf8');
+    return normalizeActivityDesktopNames(JSON.parse(raw));
+  } catch {
+    return {};
+  }
+};
+
+const writeActivityDesktopNames = async (names: ActivityDesktopNames): Promise<void> => {
+  await mkdir(join(homedir(), '.config'), { recursive: true });
+  await writeFile(activityDesktopNamesPath, `${JSON.stringify(names, null, 2)}\n`, 'utf8');
+};
+
+const updateActivityDesktopName = async (
+  activityId: string,
+  desktopIndex: number,
+  name: string
+): Promise<ActivityDesktopNames> => {
+  if (activityId.trim().length === 0) {
+    throw new Error('Invalid activity id.');
+  }
+
+  if (!Number.isInteger(desktopIndex) || desktopIndex < 0) {
+    throw new Error(`Invalid desktop index: ${desktopIndex}`);
+  }
+
+  const names = await readActivityDesktopNames();
+  const activityNames = Array.isArray(names[activityId]) ? [...names[activityId]] : [];
+
+  while (activityNames.length <= desktopIndex) {
+    activityNames.push('');
+  }
+
+  activityNames[desktopIndex] = name.trim();
+  names[activityId] = activityNames;
+
+  await writeActivityDesktopNames(names);
+  return names;
 };
 
 const sendJson = (
@@ -710,6 +775,12 @@ ipcMain.handle('kde:requestWindowCounts', () => {
     'com.anthony.WindowGridKDE.RequestWindowCounts'
   ]);
 });
+ipcMain.handle('kde:getActivityDesktopNames', async () => readActivityDesktopNames());
+ipcMain.handle(
+  'kde:updateActivityDesktopName',
+  async (_event, activityId: string, desktopIndex: number, name: string) =>
+    updateActivityDesktopName(activityId, desktopIndex, name)
+);
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());

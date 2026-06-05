@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld('kde', {
   hideWindow: () => ipcRenderer.invoke('kde:hideWindow'),
   getWindowCounts: () => ipcRenderer.invoke('kde:getWindowCounts'),
   requestWindowCounts: () => ipcRenderer.invoke('kde:requestWindowCounts'),
+  getActivityDesktopNames: () => ipcRenderer.invoke('kde:getActivityDesktopNames'),
+  updateActivityDesktopName: (activityId: string, desktopIndex: number, name: string) =>
+    ipcRenderer.invoke('kde:updateActivityDesktopName', activityId, desktopIndex, name),
   onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, counts: Record<string, number>): void => {
       callback(counts);
