@@ -21,6 +21,11 @@ const makeActivityRenderKey = (activity: Activity, activityRowIndex: number): st
 const makeDesktopRenderKey = (desktop: VirtualDesktop, desktopColumnIndex: number): string =>
   `desktop-column:${desktopColumnIndex}:${desktop.index}:${desktop.id}`;
 
+const areActivityDesktopNamesEqual = (
+  first: Record<string, string[]>,
+  second: Record<string, string[]>
+): boolean => JSON.stringify(first) === JSON.stringify(second);
+
 export function App(): JSX.Element {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [desktops, setDesktops] = useState<VirtualDesktop[]>([]);
@@ -131,7 +136,9 @@ export function App(): JSX.Element {
   const loadActivityDesktopNames = useCallback(async (): Promise<void> => {
     try {
       const names = await window.kde.getActivityDesktopNames();
-      setActivityDesktopNames(names);
+      setActivityDesktopNames((current) =>
+        areActivityDesktopNamesEqual(current, names) ? current : names
+      );
     } catch (error) {
       console.debug('Unable to load activity desktop names', error);
     }
@@ -157,6 +164,29 @@ export function App(): JSX.Element {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadActivityDesktopNames();
+    }, 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [loadActivityDesktopNames]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void loadActivities();
+      void loadVirtualDesktops();
+      void loadCurrentActivity();
+      void loadWindowCounts();
+    }, 3000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [loadActivities, loadVirtualDesktops, loadCurrentActivity, loadWindowCounts]);
 
   useEffect(() => {
     const unsubscribe = window.kde.onSelectedWindowFromKwin((nextSelectedWindow) => {
