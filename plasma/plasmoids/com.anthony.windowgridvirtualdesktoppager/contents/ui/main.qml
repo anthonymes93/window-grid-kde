@@ -8,7 +8,6 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.plasma.plasmoid
 import org.kde.taskmanager as TaskManager
-import plasma.applet.org.kde.plasma.pager
 
 PlasmoidItem {
     id: root
@@ -18,6 +17,8 @@ PlasmoidItem {
     property int uiRevision: 0
     property string pendingActivityCommand: ""
     property string pendingLoadCommand: ""
+    property string pendingSwitchCommand: ""
+    property string hoveredDesktopTitle: ""
 
     readonly property int desktopWidth: Math.max(48, Kirigami.Units.gridUnit * 3)
     readonly property int desktopHeight: Math.max(18, Kirigami.Units.gridUnit)
@@ -27,7 +28,9 @@ PlasmoidItem {
     Layout.preferredWidth: pagerRow.implicitWidth
     Layout.preferredHeight: desktopHeight
 
-    Plasmoid.status: pagerModel.shouldShowPager ? PlasmaCore.Types.ActiveStatus : PlasmaCore.Types.HiddenStatus
+    Plasmoid.status: PlasmaCore.Types.ActiveStatus
+    toolTipMainText: hoveredDesktopTitle
+    toolTipSubText: ""
 
     function shellQuote(value) {
         return "'" + String(value).replace(/'/g, "'\\''") + "'";
@@ -93,11 +96,43 @@ PlasmoidItem {
             return names[index];
         }
 
+        var desktopNames = virtualDesktopInfo.desktopNames || [];
+
+        if (desktopNames[index] && String(desktopNames[index]).length > 0) {
+            return String(desktopNames[index]);
+        }
+
         return "Desktop " + (index + 1);
+    }
+
+    function desktopId(index) {
+        var desktopIds = virtualDesktopInfo.desktopIds || [];
+        return desktopIds[index] ? String(desktopIds[index]) : "";
+    }
+
+    function isCurrentDesktop(index) {
+        return desktopId(index) === String(virtualDesktopInfo.currentDesktop);
+    }
+
+    function switchToDesktop(index) {
+        if (pendingSwitchCommand.length > 0) {
+            return;
+        }
+
+        pendingSwitchCommand = "sh -c " + shellQuote("qdbus6 org.kde.KWin /KWin org.kde.KWin.setCurrentDesktop " + String(index + 1) + " 2>/dev/null || qdbus org.kde.KWin /KWin org.kde.KWin.setCurrentDesktop " + String(index + 1) + " 2>/dev/null || true");
+        runCommand(pendingSwitchCommand);
     }
 
     function updateUI() {
         uiRevision += 1;
+    }
+
+    TaskManager.VirtualDesktopInfo {
+        id: virtualDesktopInfo
+
+        onCurrentDesktopChanged: root.updateUI()
+        onDesktopIdsChanged: root.updateUI()
+        onDesktopNamesChanged: root.updateUI()
     }
 
     TaskManager.ActivityInfo {
@@ -131,22 +166,15 @@ PlasmoidItem {
                 return;
             }
 
+            if (sourceName === root.pendingSwitchCommand) {
+                disconnectSource(sourceName);
+                root.pendingSwitchCommand = "";
+                root.updateUI();
+                return;
+            }
+
             disconnectSource(sourceName);
         }
-    }
-
-    PagerModel {
-        id: pagerModel
-
-        enabled: root.visible
-        pagerType: PagerModel.VirtualDesktops
-        showDesktop: true
-        showOnlyCurrentScreen: false
-        screenName: root.Screen.name
-        screenGeometry: Plasmoid.containment.screenGeometry
-
-        onCurrentPageChanged: root.updateUI()
-        onCountChanged: root.updateUI()
     }
 
     Timer {
@@ -168,17 +196,21 @@ PlasmoidItem {
     Row {
         id: pagerRow
 
-        anchors.fill: parent
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
         spacing: 1
 
         Repeater {
-            model: pagerModel
+            model: virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0
 
             delegate: Rectangle {
                 id: desktopButton
 
                 required property int index
-                readonly property bool active: index === pagerModel.currentPage
+                readonly property bool active: {
+                    root.uiRevision;
+                    return root.isCurrentDesktop(index);
+                }
                 readonly property string title: root.uiRevision >= 0 ? root.desktopName(index) : ""
 
                 width: root.desktopWidth
@@ -196,7 +228,11 @@ PlasmoidItem {
                     PlasmaComponents3.ToolTip.visible: containsMouse
                     PlasmaComponents3.ToolTip.text: desktopButton.title
 
-                    onClicked: pagerModel.changePage(desktopButton.index)
+                    onContainsMouseChanged: {
+                        root.hoveredDesktopTitle = containsMouse ? desktopButton.title : "";
+                    }
+
+                    onClicked: root.switchToDesktop(desktopButton.index)
                 }
             }
         }

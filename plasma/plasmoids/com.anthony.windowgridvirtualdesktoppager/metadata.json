@@ -19,6 +19,5 @@
     "X-Plasma-MainScript": "ui/main.qml",
     "X-Plasma-Provides": [
         "org.kde.plasma.virtualdesktops"
-    ],
-    "X-Plasma-RootPath": "org.kde.plasma.pager"
+    ]
 }
