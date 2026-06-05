@@ -66,6 +66,14 @@ const runCommand = async (command: string, args: string[]): Promise<string> => {
 
 const activityDesktopNamesPath = join(homedir(), '.config', 'activity-desktop-names.json');
 
+const isKdeDefaultDesktopTitle = (title: string): boolean => {
+  const normalizedTitle = title.trim();
+  return /^new desktop$/i.test(normalizedTitle) || /^desktop\s+\d+$/i.test(normalizedTitle);
+};
+
+const cleanActivityDesktopName = (title: string): string =>
+  isKdeDefaultDesktopTitle(title) ? '' : title;
+
 const normalizeActivityDesktopNames = (value: unknown): ActivityDesktopNames => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {};
@@ -77,7 +85,7 @@ const normalizeActivityDesktopNames = (value: unknown): ActivityDesktopNames => 
     if (!Array.isArray(desktopNames)) continue;
 
     names[activityId] = desktopNames.map((desktopName) =>
-      typeof desktopName === 'string' ? desktopName : ''
+      typeof desktopName === 'string' ? cleanActivityDesktopName(desktopName) : ''
     );
   }
 

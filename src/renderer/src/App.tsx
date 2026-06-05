@@ -50,6 +50,19 @@ const areActivityDesktopNamesEqual = (
   second: Record<string, string[]>
 ): boolean => JSON.stringify(first) === JSON.stringify(second);
 
+const isKdeDefaultDesktopTitle = (title: string): boolean => {
+  const normalizedTitle = title.trim();
+  return /^new desktop$/i.test(normalizedTitle) || /^desktop\s+\d+$/i.test(normalizedTitle);
+};
+
+const cleanGridDesktopTitle = (title: string | undefined, kdeDefaultTitle = ''): string => {
+  if (!title) return '';
+  const normalizedTitle = title.trim();
+  if (isKdeDefaultDesktopTitle(normalizedTitle)) return '';
+  if (kdeDefaultTitle.trim().length > 0 && normalizedTitle === kdeDefaultTitle.trim()) return '';
+  return title;
+};
+
 export function App(): JSX.Element {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [desktops, setDesktops] = useState<VirtualDesktop[]>([]);
@@ -227,17 +240,18 @@ export function App(): JSX.Element {
 
   const selectedLabel = useMemo(() => {
     if (!selection) return null;
-    const desktopTitle =
-      activityDesktopNames[selection.activity.id]?.[selection.desktop.index]?.trim() ||
-      selection.desktop.name;
-    return `${selection.activity.name} / ${desktopTitle}`;
+    const desktopTitle = cleanGridDesktopTitle(
+      activityDesktopNames[selection.activity.id]?.[selection.desktop.index],
+      selection.desktop.name
+    ).trim();
+    return `${selection.activity.name} / ${desktopTitle || `Desktop ${selection.desktop.index + 1}`}`;
   }, [activityDesktopNames, selection]);
 
   const getDesktopTitle = (
     activity: Activity,
     desktop: VirtualDesktop
   ): string => {
-    return activityDesktopNames[activity.id]?.[desktop.index] ?? desktop.name;
+    return cleanGridDesktopTitle(activityDesktopNames[activity.id]?.[desktop.index], desktop.name);
   };
 
   const handleDesktopTitleChange = (
@@ -299,7 +313,7 @@ export function App(): JSX.Element {
       desktops.map((desktop) => ({
         activityId: activity.id,
         desktopIndex: desktop.index,
-        title: currentNames[activity.id]?.[desktop.index] ?? desktop.name
+        title: cleanGridDesktopTitle(currentNames[activity.id]?.[desktop.index], desktop.name)
       }))
     );
     const reorderedCells = moveArrayItem(cells, fromFlatIndex, toFlatIndex);
@@ -372,8 +386,9 @@ export function App(): JSX.Element {
       const activityIds = activities.map((activity) => activity.id);
       await window.kde.setActivityDesktopNames(nextNames);
       await window.kde.reorderGridContents(activityIds, fromFlatIndex, toFlatIndex);
+      const targetTitle = getDesktopTitle(target.activity, target.desktop);
       setEventLog((current) => [
-        `✓ Grid cell moved → ${target.activity.name} / ${getDesktopTitle(target.activity, target.desktop)}`,
+        `✓ Grid cell moved → ${target.activity.name} / ${targetTitle || `Desktop ${target.desktop.index + 1}`}`,
         ...current
       ]);
       window.setTimeout(() => {
