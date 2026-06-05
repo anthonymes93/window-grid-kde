@@ -125,6 +125,14 @@ const updateActivityDesktopName = async (
   return names;
 };
 
+const setActivityDesktopNamesFile = async (
+  names: ActivityDesktopNames
+): Promise<ActivityDesktopNames> => {
+  const normalizedNames = normalizeActivityDesktopNames(names);
+  await writeActivityDesktopNames(normalizedNames);
+  return normalizedNames;
+};
+
 const sendJson = (
   response: ServerResponse,
   statusCode: number,
@@ -767,6 +775,39 @@ const moveCurrentDesktopToActivityAndDesktop = async (
   );
 };
 
+const reorderGridContents = async (
+  activityIds: string[],
+  fromIndex: number,
+  toIndex: number
+): Promise<void> => {
+  const cleanedActivityIds = activityIds.map((activityId) => activityId.trim()).filter(Boolean);
+
+  if (cleanedActivityIds.length === 0) {
+    throw new Error('Cannot reorder grid without activities');
+  }
+
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex) || fromIndex < 0 || toIndex < 0) {
+    throw new Error(`Invalid grid reorder indices: ${fromIndex} → ${toIndex}`);
+  }
+
+  console.log('[Electron] BEFORE ReorderGridContents:', {
+    activityIds: cleanedActivityIds,
+    fromIndex,
+    toIndex
+  });
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.ReorderGridContents',
+    cleanedActivityIds.join(','),
+    String(fromIndex),
+    String(toIndex)
+  ]);
+
+  console.log('[Electron] AFTER ReorderGridContents: reorder DELIVERED to KWin (qdbus6 returned)');
+};
+
 ipcMain.handle('kde:hideWindow', () => hideWindow());
 ipcMain.handle('kde:getWindowCounts', () => latestWindowCounts);
 ipcMain.handle('kde:requestWindowCounts', () => {
@@ -780,6 +821,10 @@ ipcMain.handle(
   'kde:updateActivityDesktopName',
   async (_event, activityId: string, desktopIndex: number, name: string) =>
     updateActivityDesktopName(activityId, desktopIndex, name)
+);
+ipcMain.handle(
+  'kde:setActivityDesktopNames',
+  async (_event, names: ActivityDesktopNames) => setActivityDesktopNamesFile(names)
 );
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
 ipcMain.handle('kde:getActivities', async () => getActivities());
@@ -843,6 +888,14 @@ ipcMain.handle(
       targetDesktopId
     });
     return moveCurrentDesktopToActivityAndDesktop(targetActivityId, targetDesktopId);
+  }
+);
+
+ipcMain.handle(
+  'kde:reorderGridContents',
+  async (_event, activityIds: string[], fromIndex: number, toIndex: number) => {
+    console.log('IPC kde:reorderGridContents received:', { activityIds, fromIndex, toIndex });
+    return reorderGridContents(activityIds, fromIndex, toIndex);
   }
 );
 

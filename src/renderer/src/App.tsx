@@ -1,9 +1,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent } from 'react';
+import type { DragEvent, KeyboardEvent } from 'react';
 import type { ActiveWindow, Activity, VirtualDesktop } from './types';
 
 type Selection = {
+  activity: Activity;
+  activityRowIndex: number;
+  desktop: VirtualDesktop;
+  desktopColumnIndex: number;
+};
+
+type GridDragCell = {
   activity: Activity;
   activityRowIndex: number;
   desktop: VirtualDesktop;
@@ -14,6 +21,23 @@ const wait = (milliseconds: number): Promise<void> =>
   new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
   });
+
+const moveArrayItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {
+  if (
+    fromIndex === toIndex ||
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= items.length ||
+    toIndex >= items.length
+  ) {
+    return items;
+  }
+
+  const next = [...items];
+  const [item] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, item);
+  return next;
+};
 
 const makeActivityRenderKey = (activity: Activity, activityRowIndex: number): string =>
   `activity-row:${activityRowIndex}:${activity.index}:${activity.id}:${activity.name}`;
@@ -45,6 +69,8 @@ export function App(): JSX.Element {
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [windowCounts, setWindowCounts] = useState<Record<string, number>>({});
   const [activityDesktopNames, setActivityDesktopNames] = useState<Record<string, string[]>>({});
+  const [draggedGridCell, setDraggedGridCell] = useState<GridDragCell | null>(null);
+  const [dragOverFlatIndex, setDragOverFlatIndex] = useState<number | null>(null);
 
   const loadActivities = useCallback(async (): Promise<void> => {
     setIsLoadingActivities(true);
@@ -259,6 +285,140 @@ export function App(): JSX.Element {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
     handleCellClick(activity, activityRowIndex, desktop, desktopColumnIndex);
+  };
+
+  const getFlatGridIndex = (activityRowIndex: number, desktopColumnIndex: number): number =>
+    activityRowIndex * desktops.length + desktopColumnIndex;
+
+  const makeReorderedActivityDesktopNames = (
+    currentNames: Record<string, string[]>,
+    fromFlatIndex: number,
+    toFlatIndex: number
+  ): Record<string, string[]> => {
+    const cells = activities.flatMap((activity) =>
+      desktops.map((desktop) => ({
+        activityId: activity.id,
+        desktopIndex: desktop.index,
+        title: currentNames[activity.id]?.[desktop.index] ?? desktop.name
+      }))
+    );
+    const reorderedCells = moveArrayItem(cells, fromFlatIndex, toFlatIndex);
+    const nextNames: Record<string, string[]> = { ...currentNames };
+
+    activities.forEach((activity) => {
+      nextNames[activity.id] = [...(nextNames[activity.id] ?? [])];
+      while (nextNames[activity.id].length < desktops.length) {
+        nextNames[activity.id].push('');
+      }
+    });
+
+    reorderedCells.forEach((cell, flatIndex) => {
+      const targetActivity = activities[Math.floor(flatIndex / desktops.length)];
+      const targetDesktop = desktops[flatIndex % desktops.length];
+      if (!targetActivity || !targetDesktop) return;
+      nextNames[targetActivity.id][targetDesktop.index] = cell.title;
+    });
+
+    return nextNames;
+  };
+
+  const makeReorderedWindowCounts = (
+    currentCounts: Record<string, number>,
+    fromFlatIndex: number,
+    toFlatIndex: number
+  ): Record<string, number> => {
+    const countCells = activities.flatMap((activity) =>
+      desktops.map((desktop) => currentCounts[`${activity.id}|${desktop.id}`] ?? 0)
+    );
+    const reorderedCounts = moveArrayItem(countCells, fromFlatIndex, toFlatIndex);
+    const nextCounts: Record<string, number> = { ...currentCounts };
+
+    reorderedCounts.forEach((count, flatIndex) => {
+      const targetActivity = activities[Math.floor(flatIndex / desktops.length)];
+      const targetDesktop = desktops[flatIndex % desktops.length];
+      if (!targetActivity || !targetDesktop) return;
+      nextCounts[`${targetActivity.id}|${targetDesktop.id}`] = count;
+    });
+
+    return nextCounts;
+  };
+
+  const finishGridCellDrag = async (
+    source: GridDragCell,
+    target: GridDragCell
+  ): Promise<void> => {
+    const fromFlatIndex = getFlatGridIndex(source.activityRowIndex, source.desktopColumnIndex);
+    const toFlatIndex = getFlatGridIndex(target.activityRowIndex, target.desktopColumnIndex);
+
+    setDraggedGridCell(null);
+    setDragOverFlatIndex(null);
+
+    if (fromFlatIndex === toFlatIndex) {
+      handleCellClick(target.activity, target.activityRowIndex, target.desktop, target.desktopColumnIndex);
+      return;
+    }
+
+    const nextNames = makeReorderedActivityDesktopNames(
+      activityDesktopNames,
+      fromFlatIndex,
+      toFlatIndex
+    );
+
+    setActivityDesktopNames(nextNames);
+    setWindowCounts((current) => makeReorderedWindowCounts(current, fromFlatIndex, toFlatIndex));
+    handleCellClick(target.activity, target.activityRowIndex, target.desktop, target.desktopColumnIndex);
+
+    try {
+      const activityIds = activities.map((activity) => activity.id);
+      await window.kde.setActivityDesktopNames(nextNames);
+      await window.kde.reorderGridContents(activityIds, fromFlatIndex, toFlatIndex);
+      setEventLog((current) => [
+        `✓ Grid cell moved → ${target.activity.name} / ${getDesktopTitle(target.activity, target.desktop)}`,
+        ...current
+      ]);
+      window.setTimeout(() => {
+        void loadActivityDesktopNames();
+        void loadWindowCounts();
+      }, 1200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Grid reorder failed: ${message}`, ...current]);
+      void loadActivityDesktopNames();
+      void loadWindowCounts();
+    }
+  };
+
+  const handleGridCellDragStart = (
+    event: DragEvent<HTMLDivElement>,
+    cell: GridDragCell
+  ): void => {
+    setDraggedGridCell(cell);
+    setDragOverFlatIndex(getFlatGridIndex(cell.activityRowIndex, cell.desktopColumnIndex));
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData(
+      'application/x-window-grid-cell',
+      String(getFlatGridIndex(cell.activityRowIndex, cell.desktopColumnIndex))
+    );
+  };
+
+  const handleGridCellDragOver = (
+    event: DragEvent<HTMLDivElement>,
+    activityRowIndex: number,
+    desktopColumnIndex: number
+  ): void => {
+    if (!draggedGridCell) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDragOverFlatIndex(getFlatGridIndex(activityRowIndex, desktopColumnIndex));
+  };
+
+  const handleGridCellDrop = (
+    event: DragEvent<HTMLDivElement>,
+    target: GridDragCell
+  ): void => {
+    event.preventDefault();
+    if (!draggedGridCell) return;
+    void finishGridCellDrag(draggedGridCell, target);
   };
 
   const handleMoveActiveWindow = async (): Promise<void> => {
@@ -542,31 +702,70 @@ export function App(): JSX.Element {
                     {activity.name}
                   </div>
 
-                  {desktops.map((desktop, desktopColumnIndex) => {
-                    const isSelected =
-                      selection?.activity.id === activity.id &&
-                      selection.activityRowIndex === activityRowIndex &&
-                      selection.desktop.id === desktop.id &&
-                      selection.desktopColumnIndex === desktopColumnIndex;
+	                  {desktops.map((desktop, desktopColumnIndex) => {
+	                    const isSelected =
+	                      selection?.activity.id === activity.id &&
+	                      selection.activityRowIndex === activityRowIndex &&
+	                      selection.desktop.id === desktop.id &&
+	                      selection.desktopColumnIndex === desktopColumnIndex;
+	                    const flatGridIndex = getFlatGridIndex(activityRowIndex, desktopColumnIndex);
+	                    const isDraggingCell =
+	                      draggedGridCell?.activity.id === activity.id &&
+	                      draggedGridCell.desktop.id === desktop.id &&
+	                      draggedGridCell.activityRowIndex === activityRowIndex &&
+	                      draggedGridCell.desktopColumnIndex === desktopColumnIndex;
+	                    const isDragTarget =
+	                      draggedGridCell !== null &&
+	                      dragOverFlatIndex === flatGridIndex &&
+	                      !isDraggingCell;
 
-                    const desktopTitle = getDesktopTitle(activity, desktop);
-                    const count = windowCounts[`${activity.id}|${desktop.id}`] ?? 0;
+	                    const desktopTitle = getDesktopTitle(activity, desktop);
+	                    const count = windowCounts[`${activity.id}|${desktop.id}`] ?? 0;
                     const MAX_THUMBS = 7;
                     const thumbs = Math.min(count, MAX_THUMBS);
                     const overflow = count > MAX_THUMBS ? count - MAX_THUMBS : 0;
 
-                    return (
-                      <div
-                        className={isSelected ? 'grid-cell selected' : 'grid-cell'}
-                        key={`${makeActivityRenderKey(
-                          activity,
-                          activityRowIndex
-                        )}-${makeDesktopRenderKey(desktop, desktopColumnIndex)}`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() =>
-                          handleCellClick(activity, activityRowIndex, desktop, desktopColumnIndex)
-                        }
+	                    return (
+	                      <div
+	                        className={[
+	                          'grid-cell',
+	                          isSelected ? 'selected' : '',
+	                          isDraggingCell ? 'dragging' : '',
+	                          isDragTarget ? 'drag-target' : ''
+	                        ].filter(Boolean).join(' ')}
+	                        key={`${makeActivityRenderKey(
+	                          activity,
+	                          activityRowIndex
+	                        )}-${makeDesktopRenderKey(desktop, desktopColumnIndex)}`}
+	                        role="button"
+	                        tabIndex={0}
+	                        draggable
+	                        onDragStart={(event) =>
+	                          handleGridCellDragStart(event, {
+	                            activity,
+	                            activityRowIndex,
+	                            desktop,
+	                            desktopColumnIndex
+	                          })
+	                        }
+	                        onDragOver={(event) =>
+	                          handleGridCellDragOver(event, activityRowIndex, desktopColumnIndex)
+	                        }
+	                        onDrop={(event) =>
+	                          handleGridCellDrop(event, {
+	                            activity,
+	                            activityRowIndex,
+	                            desktop,
+	                            desktopColumnIndex
+	                          })
+	                        }
+	                        onDragEnd={() => {
+	                          setDraggedGridCell(null);
+	                          setDragOverFlatIndex(null);
+	                        }}
+	                        onClick={() =>
+	                          handleCellClick(activity, activityRowIndex, desktop, desktopColumnIndex)
+	                        }
                         onKeyDown={(event) =>
                           handleCellKeyDown(
                             event,
@@ -593,10 +792,11 @@ export function App(): JSX.Element {
                               event.target.value
                             )
                           }
-                          onClick={(event) => event.stopPropagation()}
-                          onFocus={(event) => event.currentTarget.select()}
-                          onKeyDown={(event) => event.stopPropagation()}
-                        />
+	                          onClick={(event) => event.stopPropagation()}
+	                          onDragStart={(event) => event.preventDefault()}
+	                          onFocus={(event) => event.currentTarget.select()}
+	                          onKeyDown={(event) => event.stopPropagation()}
+	                        />
                         {count > 0 && (
                           <div className="cell-windows">
                             {Array.from({ length: thumbs }).map((_, i) => (

@@ -36,6 +36,11 @@ declare global {
         targetActivityId: string,
         targetDesktopId: string
       ) => Promise<void>;
+      reorderGridContents: (
+        activityIds: string[],
+        fromIndex: number,
+        toIndex: number
+      ) => Promise<void>;
       switchToActivity: (activityId: string) => Promise<void>;
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       restoreLastLayout: () => Promise<void>;
@@ -48,6 +53,9 @@ declare global {
         activityId: string,
         desktopIndex: number,
         name: string
+      ) => Promise<Record<string, string[]>>;
+      setActivityDesktopNames: (
+        names: Record<string, string[]>
       ) => Promise<Record<string, string[]>>;
       onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => () => void;
       onSelectedWindowFromKwin: (callback: (windowInfo: ActiveWindow) => void) => () => void;

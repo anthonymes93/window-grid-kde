@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('kde', {
       targetActivityId,
       targetDesktopId
     ),
+  reorderGridContents: (activityIds: string[], fromIndex: number, toIndex: number) =>
+    ipcRenderer.invoke('kde:reorderGridContents', activityIds, fromIndex, toIndex),
   switchToActivity: (activityId: string) =>
     ipcRenderer.invoke('kde:switchToActivity', activityId),
   moveWindowToActivityOnly: (windowId: string, activityId: string) =>
@@ -30,6 +32,8 @@ contextBridge.exposeInMainWorld('kde', {
   getActivityDesktopNames: () => ipcRenderer.invoke('kde:getActivityDesktopNames'),
   updateActivityDesktopName: (activityId: string, desktopIndex: number, name: string) =>
     ipcRenderer.invoke('kde:updateActivityDesktopName', activityId, desktopIndex, name),
+  setActivityDesktopNames: (names: Record<string, string[]>) =>
+    ipcRenderer.invoke('kde:setActivityDesktopNames', names),
   onWindowCountsUpdated: (callback: (counts: Record<string, number>) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, counts: Record<string, number>): void => {
       callback(counts);

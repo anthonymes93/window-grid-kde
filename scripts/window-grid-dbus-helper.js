@@ -22,6 +22,8 @@ const pendingWindowCountsRequests = [];
 const pendingWindowCountsWaiters = [];
 const pendingDesktopReorderRequests = [];
 const pendingDesktopReorderWaiters = [];
+const pendingGridReorderRequests = [];
+const pendingGridReorderWaiters = [];
 let requestIdCounter = 0;
 
 const toDesktopIds = (desktopIdsCsv) =>
@@ -84,6 +86,19 @@ const notifyDesktopReorderWaiters = () => {
     );
     if (request.onDelivered) request.onDelivered();
     waiter.resolve([request.fromIndex, request.toIndex, request.activityId, request.requestId]);
+  }
+};
+
+const notifyGridReorderWaiters = () => {
+  while (pendingGridReorderRequests.length > 0 && pendingGridReorderWaiters.length > 0) {
+    const request = pendingGridReorderRequests.shift();
+    const waiter = pendingGridReorderWaiters.shift();
+    clearTimeout(waiter.timeoutId);
+    console.log(
+      `[Window Grid DBus Helper] DELIVERED grid-reorder requestId=${request.requestId} from=${request.fromIndex} to=${request.toIndex}`
+    );
+    if (request.onDelivered) request.onDelivered();
+    waiter.resolve([request.activityIdsCsv, request.fromIndex, request.toIndex, request.requestId]);
   }
 };
 
@@ -437,6 +452,59 @@ class WindowGridKDEInterface extends Interface {
     });
   }
 
+  ReorderGridContents(activityIdsCsv, fromIndex, toIndex) {
+    const requestId = String(++requestIdCounter);
+    console.log('[Window Grid DBus Helper] ReorderGridContents CALLED:', {
+      requestId,
+      activityIdsCsv,
+      fromIndex,
+      toIndex,
+      queueLengthBefore: pendingGridReorderRequests.length
+    });
+
+    return new Promise((resolve, reject) => {
+      const deliveryTimeoutId = setTimeout(() => {
+        const idx = pendingGridReorderRequests.findIndex((r) => r.requestId === requestId);
+        if (idx >= 0) pendingGridReorderRequests.splice(idx, 1);
+        console.log(`[Window Grid DBus Helper] ReorderGridContents TIMEOUT: requestId=${requestId}`);
+        reject(new Error(`Grid reorder request ${requestId} not delivered to KWin within 10s`));
+      }, 10_000);
+
+      pendingGridReorderRequests.push({
+        activityIdsCsv,
+        fromIndex,
+        toIndex,
+        requestId,
+        onDelivered: () => {
+          clearTimeout(deliveryTimeoutId);
+          console.log(`[Window Grid DBus Helper] ReorderGridContents DELIVERED: requestId=${requestId}`);
+          resolve(requestId);
+        }
+      });
+      console.log('[Window Grid DBus Helper] Grid reorder queue length after push:', pendingGridReorderRequests.length);
+      notifyGridReorderWaiters();
+    });
+  }
+
+  WaitForGridReorderRequest() {
+    if (pendingGridReorderRequests.length > 0) {
+      const request = pendingGridReorderRequests.shift();
+      console.log(`[Window Grid DBus Helper] DELIVERED grid-reorder requestId=${request.requestId} to KWin immediately`);
+      if (request.onDelivered) request.onDelivered();
+      return [request.activityIdsCsv, request.fromIndex, request.toIndex, request.requestId];
+    }
+
+    return new Promise((resolve) => {
+      const waiter = { resolve, timeoutId: null };
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingGridReorderWaiters.indexOf(waiter);
+        if (idx >= 0) pendingGridReorderWaiters.splice(idx, 1);
+        resolve(['', '', '', '']);
+      }, 8000);
+      pendingGridReorderWaiters.push(waiter);
+    });
+  }
+
   ToggleWindow() {
     fetch('http://127.0.0.1:48745/toggle', { method: 'POST' }).catch(() => {});
   }
@@ -588,6 +656,20 @@ const waitForDesktopReorderDescriptor = method({ inSignature: '', outSignature: 
   descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForDesktopReorderRequest')
 });
 waitForDesktopReorderDescriptor.finisher(WindowGridKDEInterface);
+
+const reorderGridContentsDescriptor = method({ inSignature: 'sss', outSignature: 's' })({
+  kind: 'method',
+  key: 'ReorderGridContents',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ReorderGridContents')
+});
+reorderGridContentsDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForGridReorderDescriptor = method({ inSignature: '', outSignature: 'ssss' })({
+  kind: 'method',
+  key: 'WaitForGridReorderRequest',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForGridReorderRequest')
+});
+waitForGridReorderDescriptor.finisher(WindowGridKDEInterface);
 
 const toggleWindowDescriptor = method({ inSignature: '', outSignature: '' })({
   kind: 'method',
