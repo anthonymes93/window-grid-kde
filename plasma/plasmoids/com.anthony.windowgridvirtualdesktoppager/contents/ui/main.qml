@@ -20,7 +20,7 @@ PlasmoidItem {
     property string pendingSwitchCommand: ""
     property string hoveredDesktopTitle: ""
 
-    readonly property int desktopWidth: Math.max(84, Kirigami.Units.gridUnit * 5)
+    readonly property int desktopMinWidth: Math.max(54, Kirigami.Units.gridUnit * 3)
     readonly property int desktopHeight: Math.max(24, Kirigami.Units.gridUnit * 1.35)
 
     Layout.minimumWidth: pagerRow.implicitWidth
@@ -217,7 +217,10 @@ PlasmoidItem {
                 readonly property string title: root.uiRevision >= 0 ? root.desktopName(index) : ""
                 readonly property int windowCount: desktopTasks.count
 
-                width: root.desktopWidth
+                width: Math.max(
+                    root.desktopMinWidth,
+                    titleLabel.implicitWidth + Math.max(18, countLabel.implicitWidth + 8) + 21
+                )
                 height: root.desktopHeight
                 radius: 2
                 color: active ? Kirigami.Theme.highlightColor : Qt.rgba(0.12, 0.13, 0.14, 1)
@@ -249,11 +252,13 @@ PlasmoidItem {
                     spacing: 4
 
                     PlasmaComponents3.Label {
+                        id: titleLabel
+
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignVCenter
                         text: desktopButton.title
                         color: desktopButton.active ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
-                        elide: Text.ElideRight
+                        elide: Text.ElideNone
                         font.pixelSize: Math.max(10, Math.round(Kirigami.Theme.defaultFont.pixelSize * 0.82))
                         font.bold: desktopButton.active
                         horizontalAlignment: Text.AlignLeft
@@ -262,6 +267,8 @@ PlasmoidItem {
                     }
 
                     Rectangle {
+                        id: countBadge
+
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: Math.max(18, countLabel.implicitWidth + 8)
                         Layout.preferredHeight: Math.max(14, countLabel.implicitHeight + 2)
