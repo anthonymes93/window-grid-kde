@@ -47,6 +47,45 @@ then unloads and reloads the script in the running KWin process.
 
 **You must run this after every KWin script change. The dev server does NOT auto-deploy KWin scripts.**
 
+---
+
+## Plasma Widgets
+
+### Source of truth
+Custom Plasma widget source is tracked in this repo:
+```bash
+plasma/plasmoids/com.anthonymeszaros.desktoptext
+plasma/plasmoids/com.anthony.activitydesktopnamepager
+```
+
+Installed copies live here and should be treated as deployment output:
+```bash
+~/.local/share/plasma/plasmoids/com.anthonymeszaros.desktoptext
+~/.local/share/plasma/plasmoids/com.anthony.activitydesktopnamepager
+```
+
+Do not make lasting changes only in `~/.local/share/plasma/plasmoids/...`; Git will not see them.
+
+### Deploy Plasma widgets
+```bash
+npm run deploy:plasmoids
+```
+
+Copies all repo plasmoids from `plasma/plasmoids/` to `~/.local/share/plasma/plasmoids/`.
+
+### Reload Plasma shell after widget deploy
+```bash
+systemctl --user restart plasma-plasmashell.service
+```
+
+### Widget title data file
+```bash
+cat ~/.config/activity-desktop-names.json
+```
+
+The app and widgets share custom desktop titles through this file. It is user state and should
+not be committed.
+
 ### First-time setup
 ```bash
 npm run setup
@@ -207,6 +246,7 @@ qdbus6 org.kde.ActivityManager /ActivityManager/Activities \
 ```bash
 npm run build    # TypeScript check + production build (fails on type errors)
 npm run lint     # ESLint on .ts/.tsx files
+npm run deploy:plasmoids # Copy repo Plasma widget sources into KDE's installed plasmoid dir
 npm install      # Install/update dependencies
 ```
 
@@ -220,5 +260,10 @@ npm install      # Install/update dependencies
 | KWin plugin metadata | `~/.local/share/kwin/scripts/testinglink/metadata.json` |
 | KWin script source (combined) | `scripts/window-grid-kde-kwin-script.js` |
 | KWin script source (Section 2 only) | `scripts/window-grid-current-desktop-kwin-script.js` |
+| Plasma widget source root | `plasma/plasmoids/` |
+| Desktop Text widget source | `plasma/plasmoids/com.anthonymeszaros.desktoptext/` |
+| Activity Desktop Pager widget source | `plasma/plasmoids/com.anthony.activitydesktopnamepager/` |
+| Installed Plasma widget root | `~/.local/share/plasma/plasmoids/` |
+| Shared desktop title data | `~/.config/activity-desktop-names.json` |
 | DBus helper | `scripts/window-grid-dbus-helper.js` |
 | Electron HTTP bridge | `http://127.0.0.1:48745/kwin/window` |

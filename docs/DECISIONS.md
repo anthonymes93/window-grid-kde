@@ -216,3 +216,20 @@ on Wayland; requires portal setup and user interaction.
 
 **How to apply:** After changing the shortcut default key, run `npm run deploy:kwin`. The user can
 rebind in System Settings → Shortcuts → KWin Scripts → "Window Grid KDE: Toggle Window".
+
+---
+
+## DEC-016: Repo-Tracked Plasma Widget Source
+
+**Decision:** Plasma widget source lives in `plasma/plasmoids/` inside this repository. The
+installed copies in `~/.local/share/plasma/plasmoids/` are deployment targets only.
+
+**Reason:** Editing only the installed Plasma directory makes working changes invisible to Git,
+so future Codex chats and GitHub commits can miss them. Keeping the source in the project folder
+means widget changes are reviewed, committed, and preserved like the Electron/KWin code.
+
+**Workflow:** Edit `plasma/plasmoids/...`, run `npm run deploy:plasmoids`, restart Plasma Shell
+with `systemctl --user restart plasma-plasmashell.service`, then test the widget.
+
+**Shared state:** Per-activity/per-desktop titles are user data in
+`~/.config/activity-desktop-names.json`, not source code. Do not commit that file.

@@ -71,4 +71,5 @@ activity/desktop (like "Move + Switch" does for single windows).
 - ✅ Manual "Restore Last Layout" button
 - ✅ `runRestoreLayout()` shared between auto and manual restore paths
 - ✅ KWin script hot-reload deploy script
+- ✅ Repo-tracked Plasma widget source and deploy script
 - ✅ Project memory system (CLAUDE.md + docs/)

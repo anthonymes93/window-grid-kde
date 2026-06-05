@@ -15,6 +15,19 @@ Never delete entries — they are the project's empirical history.
 
 ---
 
+## 2026-06-05 — Plasma widget source moved into repo
+
+**Hypothesis / Question:** How do we make Plasma widget edits survive across Codex sessions and
+show up as normal Git changes?
+**Method:** Copied the installed plasmoids from `~/.local/share/plasma/plasmoids/` into
+`plasma/plasmoids/`, added `npm run deploy:plasmoids`, and documented the deploy/restart flow.
+**Finding:** The repo copy can be diffed, committed, and redeployed back to KDE. The installed
+plasmoid directory should be treated as a generated/deployed target only.
+**Conclusion / Action:** Future Plasma widget edits must be made under `plasma/plasmoids/...`,
+then deployed with `npm run deploy:plasmoids` and tested after restarting Plasma Shell.
+
+---
+
 ## 2026-06-03 — BUG-001 resolved: two root causes found and fixed
 
 **Hypothesis / Question:** Why does `WaitForCurrentDesktopMoveRequest` never receive a KWin waiter?

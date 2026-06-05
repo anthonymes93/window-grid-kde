@@ -1,6 +1,6 @@
 # Project State
 
-**Last updated:** 2026-06-03
+**Last updated:** 2026-06-05
 **Update this date** whenever you change feature status or platform notes.
 
 ---
@@ -24,9 +24,12 @@ No active bug. Next item per roadmap: investigate combined KWin script structura
 | Restore Last Layout button | ✅ Working | Manual re-trigger of `runRestoreLayout()` |
 | KWin right-click context menu | ✅ Working | "Open in Window Grid KDE" on any window |
 | Activity/Desktop grid UI | ✅ Working | Loads activities and desktops from KDE |
-| Current Activity display | ✅ Working | Refresh button, updates on activity switch |
-| Virtual Desktop listing | ✅ Working | Refresh button |
+| Current Activity display | ✅ Working | Refresh button plus automatic polling |
+| Virtual Desktop listing | ✅ Working | Refresh button plus automatic polling |
 | KWin script deploy | ✅ Working | `npm run deploy:kwin` copies + reloads |
+| KDE Desktop Text widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthonymeszaros.desktoptext`; shared names file sync |
+| KDE Activity Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.activitydesktopnamepager`; shared names file sync |
+| Plasma widget deploy | ✅ Working | `npm run deploy:plasmoids` copies tracked sources to installed plasmoid dir |
 
 ---
 
@@ -60,7 +63,19 @@ No active bug. Next item per roadmap: investigate combined KWin script structura
 - Buttons: Move Active Window, Move + Switch, Activity Only, Move Current Desktop, Restore Last Layout
 - Event log panel: operation history for debugging
 - Receives window selections from KWin via `kde:selectedWindowFromKwin` IPC event
+- Polls shared desktop-title data every 1s
+- Polls KDE activity/desktop structure every 3s so deleted/created activities appear automatically
 - Pre-existing TS errors on lines 17 and 283 — do not fix unless assigned
+
+### Plasma Widgets (`plasma/plasmoids/`)
+- `com.anthonymeszaros.desktoptext`: clickable panel text/title widget
+  - Popup can edit the current activity + desktop title
+  - Reset button writes `Untitled`
+  - `Untitled` renders faintly in the panel at 20% opacity
+- `com.anthony.activitydesktopnamepager`: activity-aware virtual desktop pager
+- Repo copy is source of truth; installed copy is deployed to `~/.local/share/plasma/plasmoids`
+- Deploy command: `npm run deploy:plasmoids`
+- Reload command after deploy: `systemctl --user restart plasma-plasmashell.service`
 
 ---
 
@@ -81,6 +96,24 @@ These are confirmed platform behaviors. The code already handles them correctly.
 ---
 
 ## Source File Sync Requirements
+
+### Plasma widgets
+
+```
+plasma/plasmoids/...                       ← SOURCE OF TRUTH (commit this)
+~/.local/share/plasma/plasmoids/...        ← installed copy (deployment target)
+```
+
+**Workflow for Plasma widget changes:**
+1. Edit files under `plasma/plasmoids/...`
+2. Run `npm run deploy:plasmoids`
+3. Run `systemctl --user restart plasma-plasmashell.service`
+4. Test the widget
+5. Commit the repo changes
+
+Do not make lasting changes only in `~/.local/share/plasma/plasmoids/...`; Git will not see them.
+
+### KWin script
 
 ```
 scripts/window-grid-kde-kwin-script.js    ← DEPLOYED (what KWin actually runs)
@@ -139,4 +172,21 @@ All IPC channels use `kde:camelCase` format:
 - `kde:moveWindowToActivityAndDesktop`, `kde:moveCurrentDesktopToActivityAndDesktop`
 - `kde:switchToActivity`, `kde:moveWindowToActivityOnly`
 - `kde:restoreLastLayout`
+- `kde:getActivityDesktopNames`
+- `kde:updateActivityDesktopName`
 - `kde:selectedWindowFromKwin` (event, not invoke)
+
+### Shared Desktop Title Data
+```
+~/.config/activity-desktop-names.json
+```
+
+Shape:
+```json
+{
+  "<activity-uuid>": ["Desktop 1 title", "Desktop 2 title"]
+}
+```
+
+This file is shared by the Electron app and both custom Plasma widgets. It is user state, not
+source code, and should not be committed.

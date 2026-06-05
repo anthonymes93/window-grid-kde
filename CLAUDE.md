@@ -93,8 +93,44 @@ App.tsx (onSelectedWindowFromKwin callback)
 | `src/preload/index.ts` | Context bridge: exposes `window.kde.*` to renderer | Rarely |
 | `src/renderer/src/App.tsx` | React UI: grid, buttons, event log | Often |
 | `src/renderer/src/types.d.ts` | TypeScript types for `window.kde` API | Rarely |
+| `plasma/plasmoids/com.anthonymeszaros.desktoptext/` | **Source of truth** for the clickable KDE panel title widget | Often |
+| `plasma/plasmoids/com.anthony.activitydesktopnamepager/` | **Source of truth** for the activity-aware desktop pager widget | Occasionally |
+| `scripts/tools/deploy-plasmoids.sh` | Deploys repo plasmoid sources to `~/.local/share/plasma/plasmoids` | Rarely |
 | `scripts/tools/deploy-kwin-script.sh` | Deploys combined KWin script to KWin | Never edit |
 | `scripts/tools/setup.sh` | First-time setup | Never edit |
+
+---
+
+## Plasma Widget Source of Truth
+
+Custom KDE Plasma widgets are tracked in this repo under:
+
+```
+plasma/plasmoids/com.anthonymeszaros.desktoptext
+plasma/plasmoids/com.anthony.activitydesktopnamepager
+```
+
+The installed copies under `~/.local/share/plasma/plasmoids/...` are deployment targets only.
+Do **not** make lasting source changes only in `~/.local/share/plasma/plasmoids`; Git will not
+see them and they will not be saved to GitHub.
+
+**Workflow for Plasma widget changes:**
+1. Edit the repo copy in `plasma/plasmoids/...`
+2. Run `npm run deploy:plasmoids`
+3. Restart Plasma shell: `systemctl --user restart plasma-plasmashell.service`
+4. Test the widget
+5. Commit the repo changes
+
+`npm run deploy:plasmoids` copies every repo plasmoid into
+`~/.local/share/plasma/plasmoids/`. It does not commit anything.
+
+The desktop title data shared by the app and widgets lives at:
+
+```
+~/.config/activity-desktop-names.json
+```
+
+This data file is user state, not source code.
 
 ---
 
@@ -189,6 +225,16 @@ journalctl -f | grep "Window Grid KDE"
 # The dev server hot-reloads automatically (no redeploy needed)
 # For main process changes, restart with Ctrl+C then npm run dev
 ```
+
+### For Plasma widget changes:
+```bash
+# Edit files under plasma/plasmoids/... in this repo
+npm run deploy:plasmoids
+systemctl --user restart plasma-plasmashell.service
+```
+
+Do not edit only the installed widget copy in `~/.local/share/plasma/plasmoids/...` unless
+you immediately copy the change back into `plasma/plasmoids/...`.
 
 ### For DBus helper changes:
 ```bash
@@ -327,6 +373,7 @@ Matching windows found: N                     ← filter result (must be > 0 for
 npm run dev           # Start everything (DBus helper + Electron dev, in parallel)
 npm run dbus-helper   # DBus helper only
 npm run deploy:kwin   # Deploy KWin script + reload in KWin
+npm run deploy:plasmoids # Deploy tracked Plasma widget sources
 npm run build         # TypeScript check + production build
 npm run setup         # First-time setup
 ```
