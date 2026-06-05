@@ -1,0 +1,24 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "Anthony"
+            }
+        ],
+        "Category": "Windows and Tasks",
+        "Description": "Activity-specific names for virtual desktops",
+        "EnabledByDefault": true,
+        "Icon": "org.kde.plasma.pager",
+        "Id": "com.anthony.activitydesktopnamepager",
+        "License": "GPL-2.0-or-later",
+        "Name": "Activity Desktop Name Pager",
+        "Version": "1.0.0"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "X-Plasma-Provides": [
+        "org.kde.plasma.virtualdesktops"
+    ],
+    "X-Plasma-RootPath": "org.kde.plasma.pager"
+}

@@ -12,6 +12,7 @@
     "dbus-helper": "node scripts/window-grid-dbus-helper.js",
     "lint": "eslint . --ext .ts,.tsx",
     "setup": "./scripts/tools/setup.sh",
+    "deploy:plasmoids": "./scripts/tools/deploy-plasmoids.sh",
     "deploy:kwin": "mkdir -p ~/.local/share/kwin/scripts/testinglink/contents/code && cp scripts/window-grid-kde-kwin-script.js ~/.local/share/kwin/scripts/testinglink/contents/code/main.js && echo 'Deploying KWin script...' && qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript testinglink; qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript \"$HOME/.local/share/kwin/scripts/testinglink/contents/code/main.js\" testinglink; qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start && echo 'Done.'"
   },
   "keywords": [

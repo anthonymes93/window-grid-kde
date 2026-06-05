@@ -1,0 +1,14 @@
+{
+    "KPlugin": {
+        "Authors": [{"Email": "itsme@anthonymeszaros.com", "Name": "Anthony Meszaros"}],
+        "Category": "Utilities",
+        "Description": "Per-desktop custom text label",
+        "Icon": "font-select",
+        "Id": "com.anthonymeszaros.desktoptext",
+        "License": "MIT",
+        "Name": "Desktop Text",
+        "Version": "1.0"
+    },
+    "KPackageStructure": "Plasma/Applet",
+    "X-Plasma-API-Minimum-Version": "6"
+}
