@@ -20,8 +20,8 @@ PlasmoidItem {
     property string pendingSwitchCommand: ""
     property string hoveredDesktopTitle: ""
 
-    readonly property int desktopWidth: Math.max(48, Kirigami.Units.gridUnit * 3)
-    readonly property int desktopHeight: Math.max(18, Kirigami.Units.gridUnit)
+    readonly property int desktopWidth: Math.max(84, Kirigami.Units.gridUnit * 5)
+    readonly property int desktopHeight: Math.max(24, Kirigami.Units.gridUnit * 1.35)
 
     Layout.minimumWidth: pagerRow.implicitWidth
     Layout.minimumHeight: desktopHeight
@@ -190,7 +190,10 @@ PlasmoidItem {
         repeat: true
         running: true
 
-        onTriggered: root.loadNames()
+        onTriggered: {
+            root.loadNames();
+            root.updateUI();
+        }
     }
 
     Row {
@@ -212,12 +215,80 @@ PlasmoidItem {
                     return root.isCurrentDesktop(index);
                 }
                 readonly property string title: root.uiRevision >= 0 ? root.desktopName(index) : ""
+                readonly property int windowCount: desktopTasks.count
 
                 width: root.desktopWidth
                 height: root.desktopHeight
-                color: active ? Kirigami.Theme.highlightColor : Qt.rgba(0.16, 0.17, 0.18, 1)
+                radius: 2
+                color: active ? Kirigami.Theme.highlightColor : Qt.rgba(0.12, 0.13, 0.14, 1)
                 border.width: 1
-                border.color: active ? Kirigami.Theme.focusColor : Qt.rgba(0.06, 0.07, 0.08, 1)
+                border.color: active ? Kirigami.Theme.focusColor : Qt.rgba(0.04, 0.05, 0.06, 1)
+
+                TaskManager.TasksModel {
+                    id: desktopTasks
+
+                    virtualDesktop: root.desktopId(desktopButton.index)
+                    activity: root.getCurrentActivityId()
+                    filterByVirtualDesktop: true
+                    filterByActivity: root.getCurrentActivityId().length > 0
+                    filterByScreen: false
+                    filterMinimized: false
+                    filterNotMinimized: false
+                    filterHidden: false
+                    separateLaunchers: false
+                    launcherList: []
+                    groupMode: TaskManager.TasksModel.GroupDisabled
+
+                    onCountChanged: root.updateUI()
+                }
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 5
+                    spacing: 4
+
+                    PlasmaComponents3.Label {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        text: desktopButton.title
+                        color: desktopButton.active ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+                        elide: Text.ElideRight
+                        font.pixelSize: Math.max(10, Math.round(Kirigami.Theme.defaultFont.pixelSize * 0.82))
+                        font.bold: desktopButton.active
+                        horizontalAlignment: Text.AlignLeft
+                        verticalAlignment: Text.AlignVCenter
+                        textFormat: Text.PlainText
+                    }
+
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: Math.max(18, countLabel.implicitWidth + 8)
+                        Layout.preferredHeight: Math.max(14, countLabel.implicitHeight + 2)
+                        radius: 2
+                        color: desktopButton.active
+                            ? Qt.rgba(Kirigami.Theme.highlightedTextColor.r, Kirigami.Theme.highlightedTextColor.g, Kirigami.Theme.highlightedTextColor.b, 0.18)
+                            : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.10)
+                        border.width: 1
+                        border.color: desktopButton.active
+                            ? Qt.rgba(Kirigami.Theme.highlightedTextColor.r, Kirigami.Theme.highlightedTextColor.g, Kirigami.Theme.highlightedTextColor.b, 0.25)
+                            : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.16)
+
+                        PlasmaComponents3.Label {
+                            id: countLabel
+
+                            anchors.centerIn: parent
+                            text: String(desktopButton.windowCount)
+                            color: desktopButton.active ? Kirigami.Theme.highlightedTextColor : Kirigami.Theme.textColor
+                            opacity: desktopButton.windowCount > 0 ? 0.92 : 0.45
+                            font.pixelSize: Math.max(9, Math.round(Kirigami.Theme.defaultFont.pixelSize * 0.74))
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            textFormat: Text.PlainText
+                        }
+                    }
+                }
 
                 MouseArea {
                     anchors.fill: parent
@@ -226,10 +297,10 @@ PlasmoidItem {
 
                     PlasmaComponents3.ToolTip.delay: Kirigami.Units.toolTipDelay
                     PlasmaComponents3.ToolTip.visible: containsMouse
-                    PlasmaComponents3.ToolTip.text: desktopButton.title
+                    PlasmaComponents3.ToolTip.text: desktopButton.title + " · " + desktopButton.windowCount + " windows"
 
                     onContainsMouseChanged: {
-                        root.hoveredDesktopTitle = containsMouse ? desktopButton.title : "";
+                        root.hoveredDesktopTitle = containsMouse ? PlasmaComponents3.ToolTip.text : "";
                     }
 
                     onClicked: root.switchToDesktop(desktopButton.index)
