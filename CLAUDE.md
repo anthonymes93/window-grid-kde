@@ -95,6 +95,7 @@ App.tsx (onSelectedWindowFromKwin callback)
 | `src/renderer/src/types.d.ts` | TypeScript types for `window.kde` API | Rarely |
 | `plasma/plasmoids/com.anthonymeszaros.desktoptext/` | **Source of truth** for the clickable KDE panel title widget | Often |
 | `plasma/plasmoids/com.anthony.activitydesktopnamepager/` | **Source of truth** for the activity-aware desktop pager widget | Occasionally |
+| `plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager/` | **Source of truth** for the simple virtual desktop pager widget | Occasionally |
 | `scripts/tools/deploy-plasmoids.sh` | Deploys repo plasmoid sources to `~/.local/share/plasma/plasmoids` | Rarely |
 | `scripts/tools/deploy-kwin-script.sh` | Deploys combined KWin script to KWin | Never edit |
 | `scripts/tools/setup.sh` | First-time setup | Never edit |
@@ -108,6 +109,7 @@ Custom KDE Plasma widgets are tracked in this repo under:
 ```
 plasma/plasmoids/com.anthonymeszaros.desktoptext
 plasma/plasmoids/com.anthony.activitydesktopnamepager
+plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager
 ```
 
 The installed copies under `~/.local/share/plasma/plasmoids/...` are deployment targets only.

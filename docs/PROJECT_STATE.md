@@ -29,6 +29,7 @@ No active bug. Next item per roadmap: investigate combined KWin script structura
 | KWin script deploy | ✅ Working | `npm run deploy:kwin` copies + reloads |
 | KDE Desktop Text widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthonymeszaros.desktoptext`; shared names file sync |
 | KDE Activity Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.activitydesktopnamepager`; shared names file sync |
+| KDE Virtual Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager`; search widget picker for "Window Grid Virtual Desktop Pager" |
 | Plasma widget deploy | ✅ Working | `npm run deploy:plasmoids` copies tracked sources to installed plasmoid dir |
 
 ---
@@ -73,6 +74,9 @@ No active bug. Next item per roadmap: investigate combined KWin script structura
   - Reset button writes `Untitled`
   - `Untitled` renders faintly in the panel at 20% opacity
 - `com.anthony.activitydesktopnamepager`: activity-aware virtual desktop pager
+- `com.anthony.windowgridvirtualdesktoppager`: simple clickable virtual desktop rectangle pager
+  - Widget picker name: "Window Grid Virtual Desktop Pager"
+  - Hover tooltip shows the shared Window Grid desktop name for the current activity
 - Repo copy is source of truth; installed copy is deployed to `~/.local/share/plasma/plasmoids`
 - Deploy command: `npm run deploy:plasmoids`
 - Reload command after deploy: `systemctl --user restart plasma-plasmashell.service`

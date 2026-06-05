@@ -56,12 +56,14 @@ Custom Plasma widget source is tracked in this repo:
 ```bash
 plasma/plasmoids/com.anthonymeszaros.desktoptext
 plasma/plasmoids/com.anthony.activitydesktopnamepager
+plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager
 ```
 
 Installed copies live here and should be treated as deployment output:
 ```bash
 ~/.local/share/plasma/plasmoids/com.anthonymeszaros.desktoptext
 ~/.local/share/plasma/plasmoids/com.anthony.activitydesktopnamepager
+~/.local/share/plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager
 ```
 
 Do not make lasting changes only in `~/.local/share/plasma/plasmoids/...`; Git will not see them.
@@ -263,6 +265,7 @@ npm install      # Install/update dependencies
 | Plasma widget source root | `plasma/plasmoids/` |
 | Desktop Text widget source | `plasma/plasmoids/com.anthonymeszaros.desktoptext/` |
 | Activity Desktop Pager widget source | `plasma/plasmoids/com.anthony.activitydesktopnamepager/` |
+| Virtual Desktop Pager widget source | `plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager/` |
 | Installed Plasma widget root | `~/.local/share/plasma/plasmoids/` |
 | Shared desktop title data | `~/.config/activity-desktop-names.json` |
 | DBus helper | `scripts/window-grid-dbus-helper.js` |
