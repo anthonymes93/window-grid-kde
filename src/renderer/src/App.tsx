@@ -506,8 +506,9 @@ export function App(): JSX.Element {
       }
     });
 
+    const MIN_DESKTOPS = 3;
     let keepDesktopCount = availableDesktops.length;
-    while (keepDesktopCount > 1) {
+    while (keepDesktopCount > MIN_DESKTOPS) {
       const desktop = availableDesktops[keepDesktopCount - 1];
       const hasAnyWindows = activities.some(
         (activity) => (nextCounts[`${activity.id}|${desktop.id}`] ?? 0) > 0

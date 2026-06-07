@@ -32,7 +32,7 @@ follow-up polish from the new drag/drop and workspace-back behavior.
 | + Desktop button | ✅ Working | Creates a KDE virtual desktop at the end via `createDesktop` VirtualDesktopManager API |
 | Grid drag/drop insert+shift | ✅ Working | Dropping onto occupied cell shifts other cells; creates temp desktop if no blank slot exists |
 | Grid compaction after drag | ✅ Working | KWin moves windows left into blank slots per activity after each drag |
-| Safe trailing desktop deletion | ✅ Working | Only deletes trailing desktops that are empty across every activity |
+| Safe trailing desktop deletion | ✅ Working | Only deletes trailing desktops that are empty across every activity; minimum 3 desktops always kept |
 | Occupancy excludes on-all-desktops/activities windows | ✅ Working | `isGridOccupancyWindow` skips `onAllDesktops` and `onAllActivities` windows |
 | KDE Desktop Text widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthonymeszaros.desktoptext`; shared names file sync |
 | KDE Activity Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.activitydesktopnamepager`; shared names file sync |
