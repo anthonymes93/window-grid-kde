@@ -28,23 +28,6 @@ const wait = (milliseconds: number): Promise<void> =>
     window.setTimeout(resolve, milliseconds);
   });
 
-const moveArrayItem = <T,>(items: T[], fromIndex: number, toIndex: number): T[] => {
-  if (
-    fromIndex === toIndex ||
-    fromIndex < 0 ||
-    toIndex < 0 ||
-    fromIndex >= items.length ||
-    toIndex >= items.length
-  ) {
-    return items;
-  }
-
-  const next = [...items];
-  const [item] = next.splice(fromIndex, 1);
-  next.splice(toIndex, 0, item);
-  return next;
-};
-
 const makeActivityRenderKey = (activity: Activity, activityRowIndex: number): string =>
   `activity-row:${activityRowIndex}:${activity.index}:${activity.id}:${activity.name}`;
 
@@ -85,6 +68,7 @@ export function App(): JSX.Element {
   const [isMovingCurrentDesktop, setIsMovingCurrentDesktop] = useState(false);
   const [isRestoringLayout, setIsRestoringLayout] = useState(false);
   const [isWorkspaceBacking, setIsWorkspaceBacking] = useState(false);
+  const [isCreatingDesktop, setIsCreatingDesktop] = useState(false);
   const [workspaceBackState, setWorkspaceBackState] = useState<WorkspaceBackState>({
     current: null,
     previous: null
@@ -346,65 +330,211 @@ export function App(): JSX.Element {
   const getFlatGridIndex = (activityRowIndex: number, desktopColumnIndex: number): number =>
     activityRowIndex * desktops.length + desktopColumnIndex;
 
-  const makeReorderedActivityDesktopNames = (
+  const makeMovedActivityDesktopNames = (
     currentNames: Record<string, string[]>,
-    fromFlatIndex: number,
-    toFlatIndex: number
+    source: GridDragCell,
+    target: GridDragCell,
+    nextDesktopCount = desktops.length,
+    targetBlankIndex: number | null = null
   ): Record<string, string[]> => {
-    const cells = activities.flatMap((activity) =>
-      desktops.map((desktop) => ({
-        activityId: activity.id,
-        desktopIndex: desktop.index,
-        title: cleanGridDesktopTitle(currentNames[activity.id]?.[desktop.index], desktop.name)
-      }))
-    );
-    const reorderedCells = moveArrayItem(cells, fromFlatIndex, toFlatIndex);
     const nextNames: Record<string, string[]> = { ...currentNames };
 
     activities.forEach((activity) => {
       nextNames[activity.id] = [...(nextNames[activity.id] ?? [])];
-      while (nextNames[activity.id].length < desktops.length) {
+      while (nextNames[activity.id].length < nextDesktopCount) {
         nextNames[activity.id].push('');
       }
     });
 
-    reorderedCells.forEach((cell, flatIndex) => {
-      const targetActivity = activities[Math.floor(flatIndex / desktops.length)];
-      const targetDesktop = desktops[flatIndex % desktops.length];
-      if (!targetActivity || !targetDesktop) return;
-      nextNames[targetActivity.id][targetDesktop.index] = cell.title;
-    });
+    const sourceTitle = cleanGridDesktopTitle(
+      currentNames[source.activity.id]?.[source.desktop.index],
+      source.desktop.name
+    );
+
+    if (targetBlankIndex === null || targetBlankIndex === target.desktop.index) {
+      nextNames[target.activity.id][target.desktop.index] = sourceTitle;
+      nextNames[source.activity.id][source.desktop.index] = '';
+      return nextNames;
+    }
+
+    const targetNames = nextNames[target.activity.id];
+    if (source.activity.id === target.activity.id) {
+      if (source.desktop.index > target.desktop.index) {
+        for (let index = targetBlankIndex; index > target.desktop.index; index -= 1) {
+          targetNames[index] = targetNames[index - 1] ?? '';
+        }
+        targetNames[target.desktop.index] = sourceTitle;
+        if (targetBlankIndex !== source.desktop.index) {
+          targetNames[source.desktop.index] = '';
+        }
+      } else {
+        for (let index = source.desktop.index; index < target.desktop.index; index += 1) {
+          targetNames[index] = targetNames[index + 1] ?? '';
+        }
+        targetNames[target.desktop.index] = sourceTitle;
+      }
+    } else {
+      const sourceNames = nextNames[source.activity.id];
+      sourceNames[source.desktop.index] = '';
+      for (let index = targetBlankIndex; index > target.desktop.index; index -= 1) {
+        targetNames[index] = targetNames[index - 1] ?? '';
+      }
+      targetNames[target.desktop.index] = sourceTitle;
+    }
 
     return nextNames;
   };
 
-  const makeReorderedWindowCounts = (
+  const makeMovedWindowCounts = (
     currentCounts: Record<string, number>,
-    fromFlatIndex: number,
-    toFlatIndex: number
+    source: GridDragCell,
+    target: GridDragCell,
+    availableDesktops: VirtualDesktop[],
+    targetBlankIndex: number | null = null
   ): Record<string, number> => {
-    const countCells = activities.flatMap((activity) =>
-      desktops.map((desktop) => currentCounts[`${activity.id}|${desktop.id}`] ?? 0)
-    );
-    const reorderedCounts = moveArrayItem(countCells, fromFlatIndex, toFlatIndex);
     const nextCounts: Record<string, number> = { ...currentCounts };
+    const sourceKey = `${source.activity.id}|${source.desktop.id}`;
+    const sourceCount = currentCounts[sourceKey] ?? 0;
 
-    reorderedCounts.forEach((count, flatIndex) => {
-      const targetActivity = activities[Math.floor(flatIndex / desktops.length)];
-      const targetDesktop = desktops[flatIndex % desktops.length];
-      if (!targetActivity || !targetDesktop) return;
-      nextCounts[`${targetActivity.id}|${targetDesktop.id}`] = count;
-    });
+    if (targetBlankIndex === null || targetBlankIndex === target.desktop.index) {
+      const targetKey = `${target.activity.id}|${target.desktop.id}`;
+      nextCounts[targetKey] = sourceCount;
+      nextCounts[sourceKey] = 0;
+      return nextCounts;
+    }
+
+    const keyFor = (activity: Activity, desktopIndex: number): string => {
+      const desktop = availableDesktops[desktopIndex];
+      return `${activity.id}|${desktop.id}`;
+    };
+
+    if (source.activity.id === target.activity.id) {
+      if (source.desktop.index > target.desktop.index) {
+        for (let index = targetBlankIndex; index > target.desktop.index; index -= 1) {
+          nextCounts[keyFor(target.activity, index)] =
+            currentCounts[keyFor(target.activity, index - 1)] ?? 0;
+        }
+        nextCounts[keyFor(target.activity, target.desktop.index)] = sourceCount;
+        if (targetBlankIndex !== source.desktop.index) {
+          nextCounts[sourceKey] = 0;
+        }
+      } else {
+        for (let index = source.desktop.index; index < target.desktop.index; index += 1) {
+          nextCounts[keyFor(target.activity, index)] =
+            currentCounts[keyFor(target.activity, index + 1)] ?? 0;
+        }
+        nextCounts[keyFor(target.activity, target.desktop.index)] = sourceCount;
+      }
+    } else {
+      nextCounts[sourceKey] = 0;
+      for (let index = targetBlankIndex; index > target.desktop.index; index -= 1) {
+        nextCounts[keyFor(target.activity, index)] =
+          currentCounts[keyFor(target.activity, index - 1)] ?? 0;
+      }
+      nextCounts[keyFor(target.activity, target.desktop.index)] = sourceCount;
+    }
 
     return nextCounts;
+  };
+
+  const findBlankIndexForInsert = (
+    source: GridDragCell,
+    activity: Activity,
+    targetDesktopIndex: number,
+    availableDesktops: VirtualDesktop[]
+  ): number | null => {
+    if (source.activity.id === activity.id) {
+      if (source.desktop.index > targetDesktopIndex) {
+        for (let index = targetDesktopIndex; index < source.desktop.index; index += 1) {
+          const desktop = availableDesktops[index];
+          if ((windowCounts[`${activity.id}|${desktop.id}`] ?? 0) === 0) {
+            return index;
+          }
+        }
+      }
+      return source.desktop.index;
+    }
+
+    for (let index = targetDesktopIndex; index < availableDesktops.length; index += 1) {
+      const desktop = availableDesktops[index];
+      if ((windowCounts[`${activity.id}|${desktop.id}`] ?? 0) === 0) {
+        return index;
+      }
+    }
+
+    return null;
+  };
+
+  const compactGridState = (
+    currentNames: Record<string, string[]>,
+    currentCounts: Record<string, number>,
+    availableDesktops: VirtualDesktop[]
+  ): {
+    names: Record<string, string[]>;
+    counts: Record<string, number>;
+    removableDesktopIds: string[];
+  } => {
+    const nextNames: Record<string, string[]> = {};
+    const nextCounts: Record<string, number> = {};
+
+    activities.forEach((activity) => {
+      const sourceNames = currentNames[activity.id] ?? [];
+      const keptDesktopIndexes: number[] = [];
+
+      availableDesktops.forEach((desktop) => {
+        if ((currentCounts[`${activity.id}|${desktop.id}`] ?? 0) > 0) {
+          keptDesktopIndexes.push(desktop.index);
+        }
+      });
+
+      nextNames[activity.id] = Array.from({ length: availableDesktops.length }, () => '');
+
+      keptDesktopIndexes.forEach((sourceDesktopIndex, targetDesktopIndex) => {
+        const sourceDesktop = availableDesktops[sourceDesktopIndex];
+        const targetDesktop = availableDesktops[targetDesktopIndex];
+        if (!sourceDesktop || !targetDesktop) return;
+
+        nextNames[activity.id][targetDesktopIndex] =
+          cleanGridDesktopTitle(sourceNames[sourceDesktopIndex], sourceDesktop.name);
+        nextCounts[`${activity.id}|${targetDesktop.id}`] =
+          currentCounts[`${activity.id}|${sourceDesktop.id}`] ?? 0;
+      });
+
+      for (let desktopIndex = keptDesktopIndexes.length; desktopIndex < availableDesktops.length; desktopIndex += 1) {
+        const desktop = availableDesktops[desktopIndex];
+        nextCounts[`${activity.id}|${desktop.id}`] = 0;
+      }
+    });
+
+    let keepDesktopCount = availableDesktops.length;
+    while (keepDesktopCount > 1) {
+      const desktop = availableDesktops[keepDesktopCount - 1];
+      const hasAnyWindows = activities.some(
+        (activity) => (nextCounts[`${activity.id}|${desktop.id}`] ?? 0) > 0
+      );
+      if (hasAnyWindows) break;
+      keepDesktopCount -= 1;
+    }
+
+    const removableDesktopIds = availableDesktops
+      .slice(keepDesktopCount)
+      .map((desktop) => desktop.id);
+
+    activities.forEach((activity) => {
+      nextNames[activity.id] = nextNames[activity.id].slice(0, keepDesktopCount);
+    });
+
+    return { names: nextNames, counts: nextCounts, removableDesktopIds };
   };
 
   const finishGridCellDrag = async (
     source: GridDragCell,
     target: GridDragCell
   ): Promise<void> => {
-    const fromFlatIndex = getFlatGridIndex(source.activityRowIndex, source.desktopColumnIndex);
-    const toFlatIndex = getFlatGridIndex(target.activityRowIndex, target.desktopColumnIndex);
+    let activeDesktops = desktops;
+    let targetBlankIndex: number | null = null;
+    let fromFlatIndex = getFlatGridIndex(source.activityRowIndex, source.desktopColumnIndex);
+    let toFlatIndex = getFlatGridIndex(target.activityRowIndex, target.desktopColumnIndex);
 
     setDraggedGridCell(null);
     setDragOverFlatIndex(null);
@@ -414,23 +544,83 @@ export function App(): JSX.Element {
       return;
     }
 
-    const nextNames = makeReorderedActivityDesktopNames(
-      activityDesktopNames,
-      fromFlatIndex,
-      toFlatIndex
-    );
-
-    setActivityDesktopNames(nextNames);
-    setWindowCounts((current) => makeReorderedWindowCounts(current, fromFlatIndex, toFlatIndex));
-    handleCellClick(target.activity, target.activityRowIndex, target.desktop, target.desktopColumnIndex);
-
     try {
+      const targetCount = windowCounts[`${target.activity.id}|${target.desktop.id}`] ?? 0;
+
+      if (targetCount > 0) {
+        targetBlankIndex = findBlankIndexForInsert(
+          source,
+          target.activity,
+          target.desktop.index,
+          activeDesktops
+        );
+
+        if (targetBlankIndex === null) {
+          await window.kde.createVirtualDesktop();
+          await wait(300);
+          activeDesktops = await window.kde.getVirtualDesktops();
+          desktopCountRef.current = activeDesktops.length;
+          setDesktops(activeDesktops);
+
+          const newDesktop = activeDesktops[activeDesktops.length - 1];
+          if (!newDesktop) {
+            throw new Error('KDE did not return the new virtual desktop.');
+          }
+
+          targetBlankIndex = activeDesktops.length - 1;
+        }
+
+        fromFlatIndex = source.activityRowIndex * activeDesktops.length + source.desktopColumnIndex;
+        toFlatIndex = target.activityRowIndex * activeDesktops.length + target.desktopColumnIndex;
+      }
+
+      const movedNames = makeMovedActivityDesktopNames(
+        activityDesktopNames,
+        source,
+        target,
+        activeDesktops.length,
+        targetBlankIndex
+      );
+      const movedCounts = makeMovedWindowCounts(
+        windowCounts,
+        source,
+        target,
+        activeDesktops,
+        targetBlankIndex
+      );
+      const compactedGrid = compactGridState(movedNames, movedCounts, activeDesktops);
+
+      setActivityDesktopNames(compactedGrid.names);
+      setWindowCounts(compactedGrid.counts);
+      handleCellClick(
+        target.activity,
+        target.activityRowIndex,
+        target.desktop,
+        target.desktopColumnIndex
+      );
+
       const activityIds = activities.map((activity) => activity.id);
-      await window.kde.setActivityDesktopNames(nextNames);
+      await window.kde.setActivityDesktopNames(compactedGrid.names);
       await window.kde.reorderGridContents(activityIds, fromFlatIndex, toFlatIndex);
+
+      if (compactedGrid.removableDesktopIds.length > 0) {
+        await wait(500);
+        for (const desktopId of compactedGrid.removableDesktopIds) {
+          await window.kde.removeVirtualDesktop(desktopId);
+        }
+        await wait(300);
+        activeDesktops = await window.kde.getVirtualDesktops();
+        desktopCountRef.current = activeDesktops.length;
+        setDesktops(activeDesktops);
+      }
+
       const targetTitle = getDesktopTitle(target.activity, target.desktop);
       setEventLog((current) => [
-        `✓ Grid cell moved → ${target.activity.name} / ${targetTitle || `Desktop ${target.desktop.index + 1}`}`,
+        `✓ Grid cell moved → ${target.activity.name} / ${targetTitle || `Desktop ${target.desktop.index + 1}`}${
+          compactedGrid.removableDesktopIds.length > 0
+            ? `, removed ${compactedGrid.removableDesktopIds.length} empty desktop${compactedGrid.removableDesktopIds.length === 1 ? '' : 's'}`
+            : ''
+        }`,
         ...current
       ]);
       window.setTimeout(() => {
@@ -675,8 +865,28 @@ export function App(): JSX.Element {
     }
   };
 
+  const handleCreateVirtualDesktop = async (): Promise<void> => {
+    setIsCreatingDesktop(true);
+    try {
+      await window.kde.createVirtualDesktop();
+      await wait(300);
+      await Promise.all([
+        loadVirtualDesktops(),
+        loadActivityDesktopNames(),
+        loadWindowCounts()
+      ]);
+      setEventLog((current) => ['✓ Virtual desktop created', ...current]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Create desktop failed: ${message}`, ...current]);
+    } finally {
+      setIsCreatingDesktop(false);
+    }
+  };
+
   const canRestoreLayout = !isRestoringLayout && !isMovingCurrentDesktop;
   const canWorkspaceBack = !isWorkspaceBacking && Boolean(workspaceBackState.previous);
+  const canCreateDesktop = !isCreatingDesktop && !isLoadingDesktops;
 
   const currentActivity = activities.find((a) => a.id === currentActivityId) ?? null;
 
@@ -744,15 +954,26 @@ export function App(): JSX.Element {
             <strong>{getWorkspaceBackLocationLabel(workspaceBackState.previous)}</strong>
           </div>
         </div>
-        <button
-          className="action-btn workspace-back-btn"
-          type="button"
-          data-loading={String(isWorkspaceBacking)}
-          onClick={() => void handleWorkspaceBack()}
-          disabled={!canWorkspaceBack}
-        >
-          ← Workspace Back
-        </button>
+        <div className="workspace-action-buttons">
+          <button
+            className="action-btn workspace-back-btn"
+            type="button"
+            data-loading={String(isWorkspaceBacking)}
+            onClick={() => void handleWorkspaceBack()}
+            disabled={!canWorkspaceBack}
+          >
+            ← Workspace Back
+          </button>
+          <button
+            className="action-btn"
+            type="button"
+            data-loading={String(isCreatingDesktop)}
+            onClick={() => void handleCreateVirtualDesktop()}
+            disabled={!canCreateDesktop}
+          >
+            + Desktop
+          </button>
+        </div>
       </div>
 
       <div className="grid-section">

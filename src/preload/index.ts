@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('kde', {
   getVirtualDesktops: () => ipcRenderer.invoke('kde:getVirtualDesktops'),
+  createVirtualDesktop: () => ipcRenderer.invoke('kde:createVirtualDesktop'),
+  removeVirtualDesktop: (desktopId: string) => ipcRenderer.invoke('kde:removeVirtualDesktop', desktopId),
   getActivities: () => ipcRenderer.invoke('kde:getActivities'),
   getCurrentActivity: () => ipcRenderer.invoke('kde:getCurrentActivity'),
   getCurrentDesktopNumber: () => ipcRenderer.invoke('kde:getCurrentDesktopNumber'),

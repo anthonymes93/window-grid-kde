@@ -6,16 +6,20 @@ Items are ordered roughly by priority. Update this file when items are completed
 
 ## Next Up
 
-### Investigate combined KWin script structural issues
-The combined `window-grid-kde-kwin-script.js` mixes ES5 (`var`) and ES6+ (`const`) in one file,
-with duplicate function names. Assess whether this causes the delivery bug or other subtle errors.
-Consider splitting into two separate KWin script plugins if the combined file proves problematic.
+### Live testing of new drag/drop and Workspace Back features
+New features need end-to-end testing:
+- Workspace Back: `Meta+F`, UI button, DBus fallback; confirm current/previous state updates correctly
+- + Desktop button: creates at end, UI refreshes
+- Drag onto occupied cell: cells shift, windows move in KWin, grid compacts, empty trailing desktops removed
+- Drag onto empty cell: simple move, no shift
+- Drag same→same cell: becomes a cell-select (no move)
+- Trailing desktops with windows in another activity must NOT be deleted
 
 ### Improve window position after bulk move
-Currently, ~30% of moves show a brief visual glitch before the 2-second auto-restore fires.
+Currently, ~30% of moves show a brief visual glitch before the 800ms auto-restore fires.
 Options:
-- Tune the delay (try 1500ms)
-- Add a second restore pass at 4s as insurance
+- Tune the delay further
+- Add a second restore pass at 2s as insurance
 - Listen for KWin compositor events to restore exactly when geometry settles (if KWin exposes this)
 
 ---

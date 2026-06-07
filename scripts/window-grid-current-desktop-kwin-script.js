@@ -436,9 +436,6 @@ function handleDesktopReorderContents(fromIndexText, toIndexText, activityId, re
   }
 
   const indexMap = makeDesktopReorderIndexMap(desktops.length, fromIndex, toIndex);
-  const currentDesktop = workspace.currentDesktop;
-  const currentDesktopIndex = currentDesktop ? findDesktopIndexById(desktops, getId(currentDesktop)) : -1;
-  const nextCurrentDesktopIndex = currentDesktopIndex >= 0 ? indexMap[currentDesktopIndex] : -1;
   const windows = getWorkspaceWindows();
   const restoreEntries = [];
   let movedCount = 0;
@@ -491,15 +488,6 @@ function handleDesktopReorderContents(fromIndexText, toIndexText, activityId, re
       }
     } catch (error) {
       log('[DESKTOP REORDER] failed to move "' + getCaption(window) + '": ' + error);
-    }
-  }
-
-  if (nextCurrentDesktopIndex >= 0 && nextCurrentDesktopIndex !== currentDesktopIndex) {
-    try {
-      workspace.currentDesktop = desktops[nextCurrentDesktopIndex];
-      log('[DESKTOP REORDER] current desktop followed from=' + currentDesktopIndex + ' to=' + nextCurrentDesktopIndex + ' requestId=' + requestId);
-    } catch (error) {
-      log('[DESKTOP REORDER] failed to switch current desktop requestId=' + requestId + ': ' + error);
     }
   }
 
@@ -598,6 +586,69 @@ function flatIndexForGridCell(activityIndex, desktopIndex, desktopCount) {
   return activityIndex * desktopCount + desktopIndex;
 }
 
+function compactGridWindows(activityIds, requestId) {
+  const desktops = getWorkspaceDesktops();
+  const windows = getWorkspaceWindows();
+  let movedCount = 0;
+
+  for (let ai = 0; ai < activityIds.length; ai++) {
+    const activityId = activityIds[ai];
+    const occupiedByIndex = {};
+
+    for (let wi = 0; wi < windows.length; wi++) {
+      const window = windows[wi];
+      if (!isGridOccupancyWindow(window)) continue;
+      if (!windowBelongsToActivity(window, activityId)) continue;
+
+      const windowDesktops = resolveWindowDesktops(window);
+      for (let di = 0; di < windowDesktops.length; di++) {
+        const desktopIndex = findDesktopIndexById(desktops, getId(windowDesktops[di]));
+        if (desktopIndex >= 0) {
+          occupiedByIndex[desktopIndex] = true;
+        }
+      }
+    }
+
+    const occupiedIndexes = [];
+    for (let desktopIndex = 0; desktopIndex < desktops.length; desktopIndex++) {
+      if (occupiedByIndex[desktopIndex]) {
+        occupiedIndexes.push(desktopIndex);
+      }
+    }
+
+    const indexMap = {};
+    for (let targetIndex = 0; targetIndex < occupiedIndexes.length; targetIndex++) {
+      indexMap[occupiedIndexes[targetIndex]] = targetIndex;
+    }
+
+    for (let wi = 0; wi < windows.length; wi++) {
+      const window = windows[wi];
+      if (!isGridOccupancyWindow(window)) continue;
+      if (!windowBelongsToActivity(window, activityId)) continue;
+
+      const windowDesktops = resolveWindowDesktops(window);
+      for (let di = 0; di < windowDesktops.length; di++) {
+        const sourceIndex = findDesktopIndexById(desktops, getId(windowDesktops[di]));
+        const targetIndex = indexMap[sourceIndex];
+        if (targetIndex === undefined || targetIndex === sourceIndex) continue;
+
+        try {
+          window.activities = [activityId];
+          window.desktops = [desktops[targetIndex]];
+          movedCount++;
+          log('[GRID COMPACT] moved "' + getCaption(window) + '" activity=' + activityId + ' desktop ' + (sourceIndex + 1) + ' -> ' + (targetIndex + 1) + ' requestId=' + requestId);
+        } catch (error) {
+          log('[GRID COMPACT] failed to move "' + getCaption(window) + '": ' + error);
+        }
+        break;
+      }
+    }
+  }
+
+  log('[GRID COMPACT] moved windows=' + movedCount + ' requestId=' + requestId);
+  return movedCount;
+}
+
 function handleGridReorderContents(activityIdsCsv, fromIndexText, toIndexText, requestId) {
   const activityIds = splitCsv(activityIdsCsv);
   const desktops = getWorkspaceDesktops();
@@ -614,66 +665,98 @@ function handleGridReorderContents(activityIdsCsv, fromIndexText, toIndexText, r
     return;
   }
 
-  const indexMap = makeDesktopReorderIndexMap(cellCount, fromIndex, toIndex);
-  const currentActivityId = workspace.currentActivity ? String(workspace.currentActivity) : '';
-  const currentDesktop = workspace.currentDesktop;
-  const currentActivityIndex = activityIds.indexOf(currentActivityId);
-  const currentDesktopIndex = currentDesktop ? findDesktopIndexById(desktops, getId(currentDesktop)) : -1;
-  const currentFlatIndex = currentActivityIndex >= 0 && currentDesktopIndex >= 0
-    ? flatIndexForGridCell(currentActivityIndex, currentDesktopIndex, desktops.length)
-    : -1;
-  const nextCurrentFlatIndex = currentFlatIndex >= 0 ? indexMap[currentFlatIndex] : -1;
+  const sourceCell = gridCellFromFlatIndex(fromIndex, desktops.length);
+  const targetCell = gridCellFromFlatIndex(toIndex, desktops.length);
+  const sourceActivityId = activityIds[sourceCell.activityIndex];
+  const targetActivityId = activityIds[targetCell.activityIndex];
+  const sourceDesktop = desktops[sourceCell.desktopIndex];
+  const targetDesktop = desktops[targetCell.desktopIndex];
+  const sourceDesktopId = sourceDesktop ? getId(sourceDesktop) : '';
+  const targetDesktopId = targetDesktop ? getId(targetDesktop) : '';
+
+  if (!sourceActivityId || !targetActivityId || !sourceDesktopId || !targetDesktopId) {
+    log('[GRID MOVE] invalid source/target requestId=' + requestId + ' from=' + fromIndex + ' to=' + toIndex);
+    return;
+  }
+
   const windows = getWorkspaceWindows();
   const restoreEntries = [];
   let movedCount = 0;
+  let targetBlankIndex = targetCell.desktopIndex;
 
-  log('[GRID REORDER] start requestId=' + requestId + ' from=' + fromIndex + ' to=' + toIndex + ' activities=' + activityIds.length + ' desktops=' + desktops.length);
+  function cellHasWindows(activityId, desktopId) {
+    for (let wi = 0; wi < windows.length; wi++) {
+      const candidate = windows[wi];
+      if (!isGridOccupancyWindow(candidate)) continue;
+      if (windowBelongsToActivity(candidate, activityId) && windowBelongsToDesktop(candidate, desktopId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function findBlankIndexForInsert() {
+    if (!cellHasWindows(targetActivityId, targetDesktopId)) {
+      return targetCell.desktopIndex;
+    }
+
+    if (sourceActivityId === targetActivityId) {
+      if (sourceCell.desktopIndex > targetCell.desktopIndex) {
+        for (let di = targetCell.desktopIndex; di < sourceCell.desktopIndex; di++) {
+          if (!cellHasWindows(targetActivityId, getId(desktops[di]))) {
+            return di;
+          }
+        }
+      }
+      return sourceCell.desktopIndex;
+    }
+
+    for (let di = targetCell.desktopIndex; di < desktops.length; di++) {
+      if (!cellHasWindows(targetActivityId, getId(desktops[di]))) {
+        return di;
+      }
+    }
+
+    return -1;
+  }
+
+  targetBlankIndex = findBlankIndexForInsert();
+  if (targetBlankIndex < 0) {
+    log('[GRID MOVE] no blank target slot requestId=' + requestId + ' targetActivity=' + targetActivityId + ' targetDesktopIndex=' + targetCell.desktopIndex);
+    return;
+  }
+
+  log('[GRID MOVE] start requestId=' + requestId + ' from=' + fromIndex + ' to=' + toIndex + ' sourceActivity=' + sourceActivityId + ' sourceDesktop=' + sourceDesktopId + ' targetActivity=' + targetActivityId + ' targetDesktop=' + targetDesktopId + ' blankIndex=' + targetBlankIndex);
 
   for (let i = 0; i < windows.length; i++) {
     const window = windows[i];
-    if (!isNormalUserWindow(window)) continue;
-    if (window.resourceClass === 'window-grid-kde') continue;
-    if (window.onAllDesktops) continue;
+    if (!isGridOccupancyWindow(window)) continue;
 
-    const originalActivityIds = getWindowActivityList(window);
-    if (originalActivityIds.length === 0) continue;
+    let nextActivityId = '';
+    let nextDesktop = null;
 
-    const originalDesktops = resolveWindowDesktops(window);
-    if (originalDesktops.length === 0) continue;
-
-    const nextActivityIds = [];
-    const nextDesktops = [];
-    let changed = false;
-
-    for (let ai = 0; ai < originalActivityIds.length; ai++) {
-      const originalActivityId = originalActivityIds[ai];
-      const activityIndex = activityIds.indexOf(originalActivityId);
-
-      for (let di = 0; di < originalDesktops.length; di++) {
-        const originalDesktop = originalDesktops[di];
-        const desktopIndex = findDesktopIndexById(desktops, getId(originalDesktop));
-
-        if (activityIndex < 0 || desktopIndex < 0) {
-          appendUniqueString(nextActivityIds, originalActivityId);
-          appendUniqueDesktop(nextDesktops, originalDesktop);
-          continue;
-        }
-
-        const originalFlatIndex = flatIndexForGridCell(activityIndex, desktopIndex, desktops.length);
-        const mappedFlatIndex = indexMap[originalFlatIndex];
-        const mappedCell = gridCellFromFlatIndex(mappedFlatIndex, desktops.length);
-        const nextActivityId = activityIds[mappedCell.activityIndex];
-        const nextDesktop = desktops[mappedCell.desktopIndex];
-
-        appendUniqueString(nextActivityIds, nextActivityId);
-        appendUniqueDesktop(nextDesktops, nextDesktop);
-        if (mappedFlatIndex !== originalFlatIndex) {
-          changed = true;
+    if (windowBelongsToActivity(window, sourceActivityId) && windowBelongsToDesktop(window, sourceDesktopId)) {
+      nextActivityId = targetActivityId;
+      nextDesktop = targetDesktop;
+    } else if (windowBelongsToActivity(window, targetActivityId)) {
+      const windowDesktops = resolveWindowDesktops(window);
+      for (let di = 0; di < windowDesktops.length; di++) {
+        const windowDesktopIndex = findDesktopIndexById(desktops, getId(windowDesktops[di]));
+        if (sourceActivityId === targetActivityId && sourceCell.desktopIndex < targetCell.desktopIndex) {
+          if (windowDesktopIndex > sourceCell.desktopIndex && windowDesktopIndex <= targetCell.desktopIndex) {
+            nextActivityId = targetActivityId;
+            nextDesktop = desktops[windowDesktopIndex - 1];
+            break;
+          }
+        } else if (windowDesktopIndex >= targetCell.desktopIndex && windowDesktopIndex < targetBlankIndex) {
+          nextActivityId = targetActivityId;
+          nextDesktop = desktops[windowDesktopIndex + 1];
+          break;
         }
       }
     }
 
-    if (!changed) continue;
+    if (!nextActivityId || !nextDesktop) continue;
 
     const geo = window.frameGeometry;
     const savedGeo = geo ? { x: geo.x, y: geo.y, width: geo.width, height: geo.height } : null;
@@ -684,37 +767,29 @@ function handleGridReorderContents(activityIdsCsv, fromIndexText, toIndexText, r
     const isMaximized = (typeof maximizeMode === 'number' && maximizeMode !== 0) || maximizeMode === true;
 
     try {
-      window.activities = nextActivityIds;
-      window.desktops = uniqueDesktops(nextDesktops);
+      window.activities = [nextActivityId];
+      window.desktops = [nextDesktop];
       movedCount++;
       if (savedGeo && !isMaximized && !fullScreen) {
         restoreEntries.push({ window, caption: getCaption(window), x: savedGeo.x, y: savedGeo.y, width: savedGeo.width, height: savedGeo.height });
       }
     } catch (error) {
-      log('[GRID REORDER] failed to move "' + getCaption(window) + '": ' + error);
+      log('[GRID MOVE] failed to move "' + getCaption(window) + '": ' + error);
     }
   }
 
-  if (nextCurrentFlatIndex >= 0 && nextCurrentFlatIndex !== currentFlatIndex) {
-    const nextCurrentCell = gridCellFromFlatIndex(nextCurrentFlatIndex, desktops.length);
-    const nextCurrentActivityId = activityIds[nextCurrentCell.activityIndex];
-    const nextCurrentDesktop = desktops[nextCurrentCell.desktopIndex];
-    if (nextCurrentActivityId && nextCurrentDesktop) {
-      switchToActivityAndDesktop(nextCurrentActivityId, getId(nextCurrentDesktop));
-      log('[GRID REORDER] current cell followed from=' + currentFlatIndex + ' to=' + nextCurrentFlatIndex + ' requestId=' + requestId);
-    }
-  }
+  const compactMovedCount = compactGridWindows(activityIds, requestId);
 
   lastBulkMoveLayout = restoreEntries;
   if (lastBulkMoveLayout.length > 0) {
-    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-grid-reorder-restore', '', '800', function() {
+    callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', requestId + '-grid-move-restore', '', '800', function() {
       runRestoreLayout();
-      log('[GRID REORDER] restore complete requestId=' + requestId);
+      log('[GRID MOVE] restore complete requestId=' + requestId);
     });
   }
 
   callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'RequestWindowCounts', function() {});
-  log('[GRID REORDER] moved windows=' + movedCount + ' restoreEntries=' + restoreEntries.length + ' requestId=' + requestId);
+  log('[GRID MOVE] moved windows=' + movedCount + ' compacted windows=' + compactMovedCount + ' restoreEntries=' + restoreEntries.length + ' requestId=' + requestId);
 }
 
 function waitForGridReorderRequest() {
@@ -797,18 +872,25 @@ function resolveWindowActivities(window) {
   return [];
 }
 
+function isGridOccupancyWindow(window) {
+  if (!isNormalUserWindow(window)) return false;
+  if (window.resourceClass === 'window-grid-kde') return false;
+  if (window.onAllDesktops) return false;
+  if (safeReadProperty(window, 'onAllActivities') === 'true') return false;
+  if (safeReadProperty(window, 'isOnAllActivities') === 'true') return false;
+  return true;
+}
+
 function computeWindowCounts() {
   const allWindows = getWorkspaceWindows();
-  const allDesktops = getWorkspaceDesktops();
   const counts = {};
 
   for (let i = 0; i < allWindows.length; i++) {
     const w = allWindows[i];
-    if (!isNormalUserWindow(w)) continue;
-    if (w.resourceClass === 'window-grid-kde') continue;
+    if (!isGridOccupancyWindow(w)) continue;
 
     const windowActivities = resolveWindowActivities(w);
-    const windowDesktops = w.onAllDesktops ? allDesktops : resolveWindowDesktops(w);
+    const windowDesktops = resolveWindowDesktops(w);
 
     if (windowDesktops.length === 0 || windowActivities.length === 0) continue;
 

@@ -1,14 +1,15 @@
 # Project State
 
-**Last updated:** 2026-06-05
+**Last updated:** 2026-06-07
 **Update this date** whenever you change feature status or platform notes.
 
 ---
 
 ## Current Focus
 
-BUG-001 is resolved. Move Current Desktop is now working end-to-end.
-No active bug. Next item per roadmap: investigate combined KWin script structural issues.
+All bugs resolved. Major new features added this session: Workspace Back, + Desktop button, and
+grid drag/drop with insert+shift. No active bug. Next item per roadmap: live testing and any
+follow-up polish from the new drag/drop and workspace-back behavior.
 
 ---
 
@@ -20,13 +21,19 @@ No active bug. Next item per roadmap: investigate combined KWin script structura
 | Move + Switch Activity | ✅ Working | Moves window then navigates to target activity/desktop |
 | Activity Only move | ✅ Working | Moves to activity, no desktop change |
 | Move Current Desktop (bulk) | ✅ Working | BUG-001 resolved |
-| Auto Restore Layout | ✅ Working | 2s delayed geometry restore after bulk move |
+| Auto Restore Layout | ✅ Working | 800ms delayed geometry restore after bulk move |
 | Restore Last Layout button | ✅ Working | Manual re-trigger of `runRestoreLayout()` |
 | KWin right-click context menu | ✅ Working | "Open in Window Grid KDE" on any window |
 | Activity/Desktop grid UI | ✅ Working | Loads activities and desktops from KDE |
 | Current Activity display | ✅ Working | Refresh button plus automatic polling |
 | Virtual Desktop listing | ✅ Working | Refresh button plus automatic polling |
 | KWin script deploy | ✅ Working | `npm run deploy:kwin` copies + reloads |
+| Workspace Back | ✅ Working | Toggles between last two activity+desktop locations; `Meta+F` hotkey, ← Workspace Back button, `TriggerWorkspaceBack` DBus fallback |
+| + Desktop button | ✅ Working | Creates a KDE virtual desktop at the end via `createDesktop` VirtualDesktopManager API |
+| Grid drag/drop insert+shift | ✅ Working | Dropping onto occupied cell shifts other cells; creates temp desktop if no blank slot exists |
+| Grid compaction after drag | ✅ Working | KWin moves windows left into blank slots per activity after each drag |
+| Safe trailing desktop deletion | ✅ Working | Only deletes trailing desktops that are empty across every activity |
+| Occupancy excludes on-all-desktops/activities windows | ✅ Working | `isGridOccupancyWindow` skips `onAllDesktops` and `onAllActivities` windows |
 | KDE Desktop Text widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthonymeszaros.desktoptext`; shared names file sync |
 | KDE Activity Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.activitydesktopnamepager`; shared names file sync |
 | KDE Virtual Desktop Pager widget | ✅ Working | Source tracked in `plasma/plasmoids/com.anthony.windowgridvirtualdesktoppager`; search widget picker for "Window Grid Virtual Desktop Pager" |
@@ -178,7 +185,13 @@ All IPC channels use `kde:camelCase` format:
 - `kde:restoreLastLayout`
 - `kde:getActivityDesktopNames`
 - `kde:updateActivityDesktopName`
+- `kde:setActivityDesktopNames`
+- `kde:createVirtualDesktop`, `kde:removeVirtualDesktop`
+- `kde:workspaceBack`, `kde:getWorkspaceBackState`
+- `kde:reorderGridContents`
+- `kde:closeAllOnCurrentDesktop`
 - `kde:selectedWindowFromKwin` (event, not invoke)
+- `kde:windowCountsUpdated` (event, not invoke)
 
 ### Shared Desktop Title Data
 ```

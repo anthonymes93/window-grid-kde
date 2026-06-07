@@ -602,6 +602,40 @@ const switchToDesktopNumber = async (desktopNumber: number): Promise<void> => {
   console.log('[Electron] AFTER switchToDesktopNumber:', desktopNumber);
 };
 
+const createVirtualDesktop = async (): Promise<void> => {
+  const desktops = await getVirtualDesktops();
+  const position = desktops.length;
+
+  console.log('[Electron] BEFORE createVirtualDesktop:', { position });
+
+  await runCommand('qdbus6', [
+    'org.kde.KWin',
+    '/VirtualDesktopManager',
+    'org.kde.KWin.VirtualDesktopManager.createDesktop',
+    String(position),
+    ''
+  ]);
+
+  console.log('[Electron] AFTER createVirtualDesktop:', { position });
+};
+
+const removeVirtualDesktop = async (desktopId: string): Promise<void> => {
+  if (desktopId.trim().length === 0) {
+    throw new Error('Invalid desktop id.');
+  }
+
+  console.log('[Electron] BEFORE removeVirtualDesktop:', { desktopId });
+
+  await runCommand('qdbus6', [
+    'org.kde.KWin',
+    '/VirtualDesktopManager',
+    'org.kde.KWin.VirtualDesktopManager.removeDesktop',
+    desktopId
+  ]);
+
+  console.log('[Electron] AFTER removeVirtualDesktop:', { desktopId });
+};
+
 const moveWindowToActivityOnly = async (
   windowId: string,
   activityId: string
@@ -905,6 +939,10 @@ ipcMain.handle(
   async (_event, names: ActivityDesktopNames) => setActivityDesktopNamesFile(names)
 );
 ipcMain.handle('kde:getVirtualDesktops', async () => getVirtualDesktops());
+ipcMain.handle('kde:createVirtualDesktop', async () => createVirtualDesktop());
+ipcMain.handle('kde:removeVirtualDesktop', async (_event, desktopId: string) =>
+  removeVirtualDesktop(desktopId)
+);
 ipcMain.handle('kde:getActivities', async () => getActivities());
 ipcMain.handle('kde:getCurrentActivity', async () => getCurrentActivity());
 ipcMain.handle('kde:getCurrentDesktopNumber', async () => getCurrentDesktopNumber());

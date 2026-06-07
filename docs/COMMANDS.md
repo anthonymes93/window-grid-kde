@@ -221,6 +221,18 @@ dbus-monitor --session
 qdbus6 --literal org.kde.KWin /VirtualDesktopManager desktops
 ```
 
+### Create a virtual desktop at the end
+```bash
+qdbus6 org.kde.KWin /VirtualDesktopManager \
+  org.kde.KWin.VirtualDesktopManager.createDesktop <current-desktop-count> ""
+```
+
+### Remove a virtual desktop by ID
+```bash
+qdbus6 org.kde.KWin /VirtualDesktopManager \
+  org.kde.KWin.VirtualDesktopManager.removeDesktop <desktop-id>
+```
+
 ### Get current desktop number
 ```bash
 qdbus6 org.kde.KWin /KWin currentDesktop

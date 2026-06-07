@@ -33,6 +33,8 @@ declare global {
   interface Window {
     kde: {
       getVirtualDesktops: () => Promise<VirtualDesktop[]>;
+      createVirtualDesktop: () => Promise<void>;
+      removeVirtualDesktop: (desktopId: string) => Promise<void>;
       getActivities: () => Promise<Activity[]>;
       getCurrentActivity: () => Promise<string>;
       getCurrentDesktopNumber: () => Promise<number>;
