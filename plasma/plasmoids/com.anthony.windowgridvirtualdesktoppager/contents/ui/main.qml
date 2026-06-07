@@ -8,6 +8,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.plasma.plasmoid
 import org.kde.taskmanager as TaskManager
+import Qt.labs.platform as Platform
 
 PlasmoidItem {
     id: root
@@ -23,6 +24,10 @@ PlasmoidItem {
     property string pendingSwitchCommand: ""
     property string pendingReorderCommand: ""
     property string pendingRenameCommand: ""
+    property string pendingCreateCommand: ""
+    property string pendingDeleteCommand: ""
+    property int pendingDeleteIndex: -1
+    property int rightClickedDesktopIndex: -1
     property string hoveredDesktopTitle: ""
     property int dragFromIndex: -1
     property int dragTargetIndex: -1
@@ -252,6 +257,50 @@ PlasmoidItem {
         uiRevision += 1;
     }
 
+    function spliceDesktopNameAt(index) {
+        var nextNames = JSON.parse(JSON.stringify(activityDesktopNames || {}));
+        var keys = Object.keys(nextNames);
+        for (var i = 0; i < keys.length; i++) {
+            var key = keys[i];
+            var names = Array.isArray(nextNames[key]) ? nextNames[key] : [];
+            names.splice(index, 1);
+            nextNames[key] = names;
+        }
+        activityDesktopNames = nextNames;
+        saveNames();
+        updateUI();
+    }
+
+    function deleteDesktop(index) {
+        if (pendingDeleteCommand.length > 0) {
+            return;
+        }
+        var id = desktopId(index);
+        if (id.length === 0) {
+            return;
+        }
+        pendingDeleteIndex = index;
+        pendingDeleteCommand = "sh -c " + shellQuote(
+            "qdbus6 org.kde.KWin /VirtualDesktopManager org.kde.KWin.VirtualDesktopManager.removeDesktop " +
+            shellQuote(id) + " 2>/dev/null || qdbus org.kde.KWin /VirtualDesktopManager org.kde.KWin.VirtualDesktopManager.removeDesktop " +
+            shellQuote(id) + " 2>/dev/null || true"
+        );
+        runCommand(pendingDeleteCommand);
+    }
+
+    function createAndSwitchDesktop() {
+        if (pendingCreateCommand.length > 0) {
+            return;
+        }
+        var count = virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0;
+        pendingCreateCommand = "sh -c " + shellQuote(
+            "qdbus6 org.kde.KWin /VirtualDesktopManager org.kde.KWin.VirtualDesktopManager.createDesktop " +
+            String(count) + " '' 2>/dev/null || qdbus org.kde.KWin /VirtualDesktopManager org.kde.KWin.VirtualDesktopManager.createDesktop " +
+            String(count) + " '' 2>/dev/null || true"
+        );
+        runCommand(pendingCreateCommand);
+    }
+
     function countNonGlobalWindows(model) {
         var count = 0;
         for (var i = 0; i < model.count; i++) {
@@ -327,6 +376,22 @@ PlasmoidItem {
                 return;
             }
 
+            if (sourceName === root.pendingDeleteCommand) {
+                disconnectSource(sourceName);
+                var deletedIndex = root.pendingDeleteIndex;
+                root.pendingDeleteCommand = "";
+                root.pendingDeleteIndex = -1;
+                root.spliceDesktopNameAt(deletedIndex);
+                return;
+            }
+
+            if (sourceName === root.pendingCreateCommand) {
+                disconnectSource(sourceName);
+                root.pendingCreateCommand = "";
+                switchAfterCreateTimer.restart();
+                return;
+            }
+
             if (sourceName === root.pendingRenameCommand) {
                 var exitCode = Number(data["exit code"]);
                 disconnectSource(sourceName);
@@ -341,6 +406,18 @@ PlasmoidItem {
             }
 
             disconnectSource(sourceName);
+        }
+    }
+
+    Timer {
+        id: switchAfterCreateTimer
+        interval: 350
+        repeat: false
+        onTriggered: {
+            var count = virtualDesktopInfo.desktopIds ? virtualDesktopInfo.desktopIds.length : 0;
+            if (count > 0) {
+                root.switchToDesktop(count - 1);
+            }
         }
     }
 
@@ -360,6 +437,27 @@ PlasmoidItem {
         onTriggered: {
             root.loadNames();
             root.updateUI();
+        }
+    }
+
+    Platform.Menu {
+        id: desktopContextMenu
+
+        Platform.MenuItem {
+            text: "Rename"
+            onTriggered: root.openRenameWindow(root.rightClickedDesktopIndex)
+        }
+
+        Platform.MenuItem {
+            text: "New Desktop"
+            onTriggered: root.createAndSwitchDesktop()
+        }
+
+        Platform.MenuSeparator {}
+
+        Platform.MenuItem {
+            text: "Delete Desktop"
+            onTriggered: root.deleteDesktop(root.rightClickedDesktopIndex)
         }
     }
 
@@ -522,7 +620,8 @@ PlasmoidItem {
                             root.dragFromIndex = -1;
                             root.dragTargetIndex = -1;
                             root.dragMoved = false;
-                            root.openRenameWindow(desktopButton.index);
+                            root.rightClickedDesktopIndex = desktopButton.index;
+                            desktopContextMenu.open();
                             return;
                         }
 
