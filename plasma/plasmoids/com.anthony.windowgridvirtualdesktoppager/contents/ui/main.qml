@@ -252,6 +252,22 @@ PlasmoidItem {
         uiRevision += 1;
     }
 
+    function countNonGlobalWindows(model) {
+        var count = 0;
+        for (var i = 0; i < model.count; i++) {
+            var idx = model.index(i, 0);
+            var onAllDesktops = model.data(idx, TaskManager.AbstractTasksModel.IsOnAllVirtualDesktops);
+            var activities = model.data(idx, TaskManager.AbstractTasksModel.Activities);
+            // Only skip the window if we have positive proof it's global.
+            // If role data is unavailable (null/undefined), count the window.
+            var onAllActivities = Array.isArray(activities) && activities.length === 0;
+            if (!onAllDesktops && !onAllActivities) {
+                count += 1;
+            }
+        }
+        return count;
+    }
+
     TaskManager.VirtualDesktopInfo {
         id: virtualDesktopInfo
 
@@ -372,7 +388,10 @@ PlasmoidItem {
                     root.uiRevision;
                     return root.hasCustomDesktopName(index);
                 }
-                readonly property int windowCount: desktopTasks.count
+                readonly property int windowCount: {
+                    root.uiRevision;
+                    return root.countNonGlobalWindows(desktopTasks);
+                }
                 readonly property bool editing: root.editingDesktopIndex === index
 
                 width: Math.max(
