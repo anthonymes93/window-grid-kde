@@ -44,6 +44,10 @@ input {
   font: inherit;
 }
 
+textarea {
+  font: inherit;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -51,7 +55,7 @@ button:disabled {
 
 .app-shell {
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-rows: auto auto auto 1fr auto auto;
   min-height: 100vh;
   padding: 20px;
   gap: 14px;
@@ -202,6 +206,53 @@ button:disabled {
   font-weight: 400;
 }
 
+/* ── Workspace Back ──────────────────────────────────── */
+
+.workspace-back-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+}
+
+.workspace-back-status {
+  display: flex;
+  gap: 18px;
+  min-width: 0;
+}
+
+.workspace-back-status div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspace-back-status span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.workspace-back-status strong {
+  max-width: 260px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-back-btn {
+  flex-shrink: 0;
+}
+
 /* ── Grid section ─────────────────────────────────────── */
 
 .grid-section {
@@ -285,32 +336,34 @@ button:disabled {
 }
 
 .desktop-header span {
-  overflow: hidden;
-  max-width: 90px;
+  overflow: visible;
+  max-width: 138px;
   padding: 0 6px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal;
 }
 
 .activity-header {
   display: flex;
   align-items: center;
-  min-height: 38px;
+  min-height: 64px;
   padding: 0 10px;
   border-radius: 6px;
   background: var(--surface-2);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .grid-cell {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 5px;
-  min-height: 54px;
+  min-height: 64px;
   padding: 6px 7px 5px;
   border: 1px solid var(--border-muted);
   border-radius: 6px;
@@ -361,7 +414,7 @@ button:disabled {
 .cell-title-input {
   width: 100%;
   min-width: 0;
-  height: 17px;
+  min-height: 30px;
   padding: 1px 3px;
   border: 1px solid transparent;
   border-radius: 3px;
@@ -370,8 +423,11 @@ button:disabled {
   font-size: 10px;
   font-weight: 600;
   line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  field-sizing: content;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  resize: none;
+  white-space: pre-wrap;
 }
 
 .cell-title-input:hover,

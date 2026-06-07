@@ -47,6 +47,15 @@ then unloads and reloads the script in the running KWin process.
 
 **You must run this after every KWin script change. The dev server does NOT auto-deploy KWin scripts.**
 
+### Workspace Back shortcut fallback
+The KWin script registers Workspace Back as `Meta+F`. If automatic assignment does not stick,
+bind this command manually in KDE System Settings → Shortcuts → Custom Shortcuts:
+
+```bash
+qdbus6 com.anthony.WindowGridKDE /WindowGridKDE \
+  com.anthony.WindowGridKDE.TriggerWorkspaceBack
+```
+
 ---
 
 ## Plasma Widgets
@@ -176,6 +185,14 @@ qdbus6 --literal com.anthony.WindowGridKDE /WindowGridKDE org.freedesktop.DBus.I
 
 ### Call methods directly for debugging
 ```bash
+# Trigger Workspace Back manually
+qdbus6 com.anthony.WindowGridKDE /WindowGridKDE \
+  com.anthony.WindowGridKDE.TriggerWorkspaceBack
+
+# Read Workspace Back current/previous state
+qdbus6 com.anthony.WindowGridKDE /WindowGridKDE \
+  com.anthony.WindowGridKDE.GetWorkspaceBackState
+
 # Trigger layout restore manually
 qdbus6 com.anthony.WindowGridKDE /WindowGridKDE \
   com.anthony.WindowGridKDE.TriggerRestoreLayout

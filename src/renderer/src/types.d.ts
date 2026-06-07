@@ -17,6 +17,18 @@ export type ActiveWindow = {
   desktopIds?: string[];
 };
 
+export type WorkspaceBackLocation = {
+  activityId: string;
+  desktopId: string;
+  desktopNumber: number;
+  desktopName: string;
+};
+
+export type WorkspaceBackState = {
+  current: WorkspaceBackLocation | null;
+  previous: WorkspaceBackLocation | null;
+};
+
 declare global {
   interface Window {
     kde: {
@@ -44,6 +56,8 @@ declare global {
       switchToActivity: (activityId: string) => Promise<void>;
       moveWindowToActivityOnly: (windowId: string, activityId: string) => Promise<void>;
       restoreLastLayout: () => Promise<void>;
+      workspaceBack: () => Promise<void>;
+      getWorkspaceBackState: () => Promise<WorkspaceBackState>;
       closeAllOnCurrentDesktop: () => Promise<void>;
       hideWindow: () => Promise<void>;
       getWindowCounts: () => Promise<Record<string, number>>;

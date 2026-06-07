@@ -39,6 +39,18 @@ type KwinWindowPayload = {
 
 type ActivityDesktopNames = Record<string, string[]>;
 
+type WorkspaceBackLocation = {
+  activityId: string;
+  desktopId: string;
+  desktopNumber: number;
+  desktopName: string;
+};
+
+type WorkspaceBackState = {
+  current: WorkspaceBackLocation | null;
+  previous: WorkspaceBackLocation | null;
+};
+
 const unavailableActiveWindow: ActiveWindow = {
   id: 'unavailable',
   title: 'No active window detected',
@@ -73,6 +85,41 @@ const isKdeDefaultDesktopTitle = (title: string): boolean => {
 
 const cleanActivityDesktopName = (title: string): string =>
   isKdeDefaultDesktopTitle(title) ? '' : title;
+
+const emptyWorkspaceBackState: WorkspaceBackState = {
+  current: null,
+  previous: null
+};
+
+const normalizeWorkspaceBackLocation = (value: unknown): WorkspaceBackLocation | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const location = value as Partial<WorkspaceBackLocation>;
+  const activityId = typeof location.activityId === 'string' ? location.activityId : '';
+  const desktopId = typeof location.desktopId === 'string' ? location.desktopId : '';
+  const desktopNumber = Number.isInteger(location.desktopNumber) ? location.desktopNumber : 0;
+  const desktopName = typeof location.desktopName === 'string' ? location.desktopName : '';
+
+  if (!activityId || !desktopId) {
+    return null;
+  }
+
+  return { activityId, desktopId, desktopNumber, desktopName };
+};
+
+const parseWorkspaceBackState = (jsonData: string): WorkspaceBackState => {
+  try {
+    const parsed = JSON.parse(jsonData) as { current?: unknown; previous?: unknown };
+    return {
+      current: normalizeWorkspaceBackLocation(parsed.current),
+      previous: normalizeWorkspaceBackLocation(parsed.previous)
+    };
+  } catch {
+    return emptyWorkspaceBackState;
+  }
+};
 
 const normalizeActivityDesktopNames = (value: unknown): ActivityDesktopNames => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -753,6 +800,28 @@ const triggerRestoreLayout = async (): Promise<void> => {
   console.log('[Electron] AFTER TriggerRestoreLayout');
 };
 
+const triggerWorkspaceBack = async (): Promise<void> => {
+  console.log('[Electron] BEFORE TriggerWorkspaceBack');
+
+  await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.TriggerWorkspaceBack'
+  ]);
+
+  console.log('[Electron] AFTER TriggerWorkspaceBack');
+};
+
+const getWorkspaceBackState = async (): Promise<WorkspaceBackState> => {
+  const output = await runCommand('qdbus6', [
+    'com.anthony.WindowGridKDE',
+    '/WindowGridKDE',
+    'com.anthony.WindowGridKDE.GetWorkspaceBackState'
+  ]);
+
+  return parseWorkspaceBackState(output);
+};
+
 const moveCurrentDesktopToActivityAndDesktop = async (
   targetActivityId: string,
   targetDesktopId: string
@@ -825,6 +894,7 @@ ipcMain.handle('kde:requestWindowCounts', () => {
   ]);
 });
 ipcMain.handle('kde:getActivityDesktopNames', async () => readActivityDesktopNames());
+ipcMain.handle('kde:getWorkspaceBackState', async () => getWorkspaceBackState());
 ipcMain.handle(
   'kde:updateActivityDesktopName',
   async (_event, activityId: string, desktopIndex: number, name: string) =>
@@ -886,6 +956,11 @@ ipcMain.handle('kde:closeAllOnCurrentDesktop', async () => triggerCloseAll());
 ipcMain.handle('kde:restoreLastLayout', async () => {
   console.log('IPC kde:restoreLastLayout received');
   return triggerRestoreLayout();
+});
+
+ipcMain.handle('kde:workspaceBack', async () => {
+  console.log('IPC kde:workspaceBack received');
+  return triggerWorkspaceBack();
 });
 
 ipcMain.handle(

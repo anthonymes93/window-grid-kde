@@ -722,6 +722,26 @@ registerShortcut(
     }
 );
 
+function triggerWorkspaceBackFromShortcut(shortcutName) {
+    print("Window Grid KDE: Workspace Back triggered from shortcut " + shortcutName);
+    callDBus(
+        WINDOW_GRID_KDE_SERVICE,
+        WINDOW_GRID_KDE_PATH,
+        WINDOW_GRID_KDE_INTERFACE,
+        "TriggerWorkspaceBack",
+        function() {}
+    );
+}
+
+registerShortcut(
+    "window-grid-kde-workspace-back-meta-f",
+    "Window Grid KDE: Workspace Back",
+    "Meta+F",
+    function() {
+        triggerWorkspaceBackFromShortcut("Meta+F");
+    }
+);
+
 print("Window Grid KDE: [SECTION 1] init complete, calling waitForMoveRequests at t=" + Date.now());
 waitForMoveRequests();
 
@@ -975,6 +995,176 @@ function moveWindowToActivityAndDesktop(window, targetActivityId, targetDesktopI
 }
 
 let lastBulkMoveLayout = null;
+let workspaceBackCurrentLocation = null;
+let workspaceBackPreviousLocation = null;
+let workspaceBackPendingOldLocation = null;
+let workspaceBackPendingNewLocation = null;
+let workspaceBackPendingGeneration = 0;
+let workspaceBackSuppressUntil = 0;
+
+function getDesktopNumberById(desktopId) {
+  const desktops = getWorkspaceDesktops();
+  for (let i = 0; i < desktops.length; i += 1) {
+    if (getId(desktops[i]) === desktopId) {
+      return i + 1;
+    }
+  }
+  return 0;
+}
+
+function getWorkspaceLocation() {
+  const currentActivityId = workspace.currentActivity ? String(workspace.currentActivity) : '';
+  const currentDesktop = workspace.currentDesktop;
+  const currentDesktopId = currentDesktop && currentDesktop.id ? String(currentDesktop.id) : '';
+  const currentDesktopName = currentDesktop && currentDesktop.name ? String(currentDesktop.name) : '';
+  return {
+    activityId: currentActivityId,
+    desktopId: currentDesktopId,
+    desktopNumber: getDesktopNumberById(currentDesktopId),
+    desktopName: currentDesktopName
+  };
+}
+
+function workspaceLocationsEqual(left, right) {
+  if (!left || !right) return false;
+  return left.activityId === right.activityId && left.desktopId === right.desktopId;
+}
+
+function describeWorkspaceLocation(location) {
+  if (!location) return 'none';
+  return 'activity ' + location.activityId + ' desktop ' + location.desktopNumber + ' (' + location.desktopId + ')';
+}
+
+function sendWorkspaceBackState() {
+  if (typeof callDBus !== 'function') return;
+  const payload = JSON.stringify({
+    current: workspaceBackCurrentLocation,
+    previous: workspaceBackPreviousLocation
+  });
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWorkspaceBackState', payload, function() {});
+}
+
+function recordWorkspaceBackTransition(previousLocation, currentLocation) {
+  if (!previousLocation || !currentLocation || workspaceLocationsEqual(previousLocation, currentLocation)) {
+    workspaceBackCurrentLocation = currentLocation || workspaceBackCurrentLocation;
+    sendWorkspaceBackState();
+    return;
+  }
+
+  workspaceBackPreviousLocation = previousLocation;
+  workspaceBackCurrentLocation = currentLocation;
+  log('Workspace Back recorded previous location: ' + describeWorkspaceLocation(previousLocation));
+  sendWorkspaceBackState();
+}
+
+function flushWorkspaceBackPendingLocation() {
+  const previousLocation = workspaceBackPendingOldLocation;
+  const currentLocation = workspaceBackPendingNewLocation;
+  workspaceBackPendingOldLocation = null;
+  workspaceBackPendingNewLocation = null;
+  recordWorkspaceBackTransition(previousLocation, currentLocation);
+}
+
+function scheduleWorkspaceBackPendingFlush() {
+  workspaceBackPendingGeneration += 1;
+  const generation = String(workspaceBackPendingGeneration);
+
+  if (typeof callDBus !== 'function') {
+    flushWorkspaceBackPendingLocation();
+    return;
+  }
+
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'Sleep', 'workspace-back-debounce', generation, '250', function(_requestId, returnedGeneration) {
+    if (String(returnedGeneration) !== String(workspaceBackPendingGeneration)) {
+      return;
+    }
+    flushWorkspaceBackPendingLocation();
+  });
+}
+
+function noteWorkspaceLocationChanged() {
+  const nextLocation = getWorkspaceLocation();
+
+  if (!workspaceBackCurrentLocation) {
+    workspaceBackCurrentLocation = nextLocation;
+    sendWorkspaceBackState();
+    return;
+  }
+
+  if (workspaceLocationsEqual(workspaceBackCurrentLocation, nextLocation)) {
+    sendWorkspaceBackState();
+    return;
+  }
+
+  if (Date.now() < workspaceBackSuppressUntil) {
+    workspaceBackCurrentLocation = nextLocation;
+    sendWorkspaceBackState();
+    return;
+  }
+
+  if (!workspaceBackPendingOldLocation) {
+    workspaceBackPendingOldLocation = workspaceBackCurrentLocation;
+  }
+  workspaceBackPendingNewLocation = nextLocation;
+  scheduleWorkspaceBackPendingFlush();
+}
+
+function switchWorkspaceBackTo(location) {
+  if (!location || !location.activityId || !location.desktopId) {
+    log('Workspace Back cannot switch: missing previous location');
+    return false;
+  }
+
+  log('Workspace Back switching to activity ' + location.activityId + ' desktop ' + location.desktopNumber + ' (' + location.desktopId + ')');
+  switchToActivityAndDesktop(location.activityId, location.desktopId);
+  return true;
+}
+
+function handleWorkspaceBack(requestId) {
+  log('Workspace Back triggered requestId=' + requestId);
+  const originLocation = getWorkspaceLocation();
+  const targetLocation = workspaceBackPreviousLocation;
+
+  if (!targetLocation) {
+    log('Workspace Back no previous location available');
+    workspaceBackCurrentLocation = originLocation;
+    sendWorkspaceBackState();
+    return;
+  }
+
+  workspaceBackSuppressUntil = Date.now() + 900;
+  workspaceBackPreviousLocation = originLocation;
+  workspaceBackCurrentLocation = targetLocation;
+  sendWorkspaceBackState();
+
+  if (!switchWorkspaceBackTo(targetLocation)) {
+    workspaceBackCurrentLocation = originLocation;
+    sendWorkspaceBackState();
+  }
+}
+
+function connectWorkspaceBackSignals() {
+  workspaceBackCurrentLocation = getWorkspaceLocation();
+  sendWorkspaceBackState();
+
+  try {
+    if (workspace.currentDesktopChanged && workspace.currentDesktopChanged.connect) {
+      workspace.currentDesktopChanged.connect(noteWorkspaceLocationChanged);
+      log('Workspace Back connected currentDesktopChanged');
+    }
+  } catch (error) {
+    log('Workspace Back currentDesktopChanged connect failed: ' + error);
+  }
+
+  try {
+    if (workspace.currentActivityChanged && workspace.currentActivityChanged.connect) {
+      workspace.currentActivityChanged.connect(noteWorkspaceLocationChanged);
+      log('Workspace Back connected currentActivityChanged');
+    }
+  } catch (error) {
+    log('Workspace Back currentActivityChanged connect failed: ' + error);
+  }
+}
 
 function switchToActivityAndDesktop(activityId, desktopId) {
   callDBus(
@@ -1628,11 +1818,41 @@ function waitForCloseAllRequest() {
   });
 }
 
+function waitForWorkspaceBackRequest() {
+  let handled = false;
+  let watchdogId = null;
+  try {
+    watchdogId = setTimeout(function() {
+      if (!handled) {
+        handled = true;
+        log('[WORKSPACE BACK] watchdog fired — re-arming');
+        waitForWorkspaceBackRequest();
+      }
+    }, 15000);
+  } catch(e) {}
+
+  callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'WaitForWorkspaceBackRequest', function(requestId) {
+    if (handled) return;
+    handled = true;
+    try { clearTimeout(watchdogId); } catch(e) {}
+    if (requestId) {
+      try {
+        handleWorkspaceBack(requestId);
+      } catch (error) {
+        log('Workspace Back failed requestId=' + requestId + ': ' + error);
+      }
+    }
+    waitForWorkspaceBackRequest();
+  });
+}
+
 log('[SECTION 2] init: starting polling loops at t=' + Date.now());
+connectWorkspaceBackSignals();
 waitForCurrentDesktopMoveRequest();
 waitForRestoreLayoutRequest();
 waitForWindowCountsRequest();
 waitForCloseAllRequest();
+waitForWorkspaceBackRequest();
 waitForDesktopReorderRequest();
 waitForGridReorderRequest();
 callDBus(SERVICE_NAME, OBJECT_PATH, INTERFACE_NAME, 'ReceiveWindowCounts', computeWindowCounts(), function() {});

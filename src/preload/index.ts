@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('kde', {
   moveWindowToActivityOnly: (windowId: string, activityId: string) =>
     ipcRenderer.invoke('kde:moveWindowToActivityOnly', windowId, activityId),
   restoreLastLayout: () => ipcRenderer.invoke('kde:restoreLastLayout'),
+  workspaceBack: () => ipcRenderer.invoke('kde:workspaceBack'),
+  getWorkspaceBackState: () => ipcRenderer.invoke('kde:getWorkspaceBackState'),
   closeAllOnCurrentDesktop: () => ipcRenderer.invoke('kde:closeAllOnCurrentDesktop'),
   hideWindow: () => ipcRenderer.invoke('kde:hideWindow'),
   getWindowCounts: () => ipcRenderer.invoke('kde:getWindowCounts'),

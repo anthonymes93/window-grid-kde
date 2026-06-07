@@ -1,7 +1,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent } from 'react';
-import type { ActiveWindow, Activity, VirtualDesktop } from './types';
+import type {
+  ActiveWindow,
+  Activity,
+  VirtualDesktop,
+  WorkspaceBackLocation,
+  WorkspaceBackState
+} from './types';
 
 type Selection = {
   activity: Activity;
@@ -78,6 +84,11 @@ export function App(): JSX.Element {
   const [isMovingActivityOnly, setIsMovingActivityOnly] = useState(false);
   const [isMovingCurrentDesktop, setIsMovingCurrentDesktop] = useState(false);
   const [isRestoringLayout, setIsRestoringLayout] = useState(false);
+  const [isWorkspaceBacking, setIsWorkspaceBacking] = useState(false);
+  const [workspaceBackState, setWorkspaceBackState] = useState<WorkspaceBackState>({
+    current: null,
+    previous: null
+  });
   const desktopCountRef = useRef(0);
   const [eventLog, setEventLog] = useState<string[]>([]);
   const [windowCounts, setWindowCounts] = useState<Record<string, number>>({});
@@ -183,18 +194,29 @@ export function App(): JSX.Element {
     }
   }, []);
 
+  const loadWorkspaceBackState = useCallback(async (): Promise<void> => {
+    try {
+      const state = await window.kde.getWorkspaceBackState();
+      setWorkspaceBackState(state);
+    } catch (error) {
+      console.debug('Unable to load Workspace Back state', error);
+    }
+  }, []);
+
   useEffect(() => {
     void loadActivities();
     void loadVirtualDesktops();
     void loadCurrentActivity();
     void loadWindowCounts();
     void loadActivityDesktopNames();
+    void loadWorkspaceBackState();
   }, [
     loadActivities,
     loadVirtualDesktops,
     loadCurrentActivity,
     loadWindowCounts,
-    loadActivityDesktopNames
+    loadActivityDesktopNames,
+    loadWorkspaceBackState
   ]);
 
   useEffect(() => {
@@ -220,12 +242,19 @@ export function App(): JSX.Element {
       void loadVirtualDesktops();
       void loadCurrentActivity();
       void loadWindowCounts();
+      void loadWorkspaceBackState();
     }, 3000);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [loadActivities, loadVirtualDesktops, loadCurrentActivity, loadWindowCounts]);
+  }, [
+    loadActivities,
+    loadVirtualDesktops,
+    loadCurrentActivity,
+    loadWindowCounts,
+    loadWorkspaceBackState
+  ]);
 
   useEffect(() => {
     const unsubscribe = window.kde.onSelectedWindowFromKwin((nextSelectedWindow) => {
@@ -252,6 +281,19 @@ export function App(): JSX.Element {
     desktop: VirtualDesktop
   ): string => {
     return cleanGridDesktopTitle(activityDesktopNames[activity.id]?.[desktop.index], desktop.name);
+  };
+
+  const getWorkspaceBackLocationLabel = (location: WorkspaceBackLocation | null): string => {
+    if (!location) return 'None';
+    const activityName =
+      activities.find((activity) => activity.id === location.activityId)?.name ??
+      location.activityId.slice(0, 8);
+    const desktopIndex = Math.max(0, location.desktopNumber - 1);
+    const desktopTitle = cleanGridDesktopTitle(
+      activityDesktopNames[location.activityId]?.[desktopIndex],
+      location.desktopName
+    );
+    return `${activityName} / ${desktopTitle || `Desktop ${location.desktopNumber || '?'}`}`;
   };
 
   const handleDesktopTitleChange = (
@@ -613,7 +655,28 @@ export function App(): JSX.Element {
     }
   };
 
+  const handleWorkspaceBack = async (): Promise<void> => {
+    setIsWorkspaceBacking(true);
+    void window.kde.hideWindow();
+    try {
+      await window.kde.workspaceBack();
+      await wait(300);
+      await Promise.all([
+        loadWorkspaceBackState(),
+        loadCurrentActivity(),
+        loadWindowCounts()
+      ]);
+      setEventLog((current) => ['✓ Workspace Back', ...current]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setEventLog((current) => [`✗ Workspace Back failed: ${message}`, ...current]);
+    } finally {
+      setIsWorkspaceBacking(false);
+    }
+  };
+
   const canRestoreLayout = !isRestoringLayout && !isMovingCurrentDesktop;
+  const canWorkspaceBack = !isWorkspaceBacking && Boolean(workspaceBackState.previous);
 
   const currentActivity = activities.find((a) => a.id === currentActivityId) ?? null;
 
@@ -670,6 +733,28 @@ export function App(): JSX.Element {
         </div>
       </div>
 
+      <div className="workspace-back-panel">
+        <div className="workspace-back-status">
+          <div>
+            <span>Current</span>
+            <strong>{getWorkspaceBackLocationLabel(workspaceBackState.current)}</strong>
+          </div>
+          <div>
+            <span>Previous</span>
+            <strong>{getWorkspaceBackLocationLabel(workspaceBackState.previous)}</strong>
+          </div>
+        </div>
+        <button
+          className="action-btn workspace-back-btn"
+          type="button"
+          data-loading={String(isWorkspaceBacking)}
+          onClick={() => void handleWorkspaceBack()}
+          disabled={!canWorkspaceBack}
+        >
+          ← Workspace Back
+        </button>
+      </div>
+
       <div className="grid-section">
         <div className="grid-header">
           <span className="grid-header-title">Activity / Desktop Grid</span>
@@ -694,7 +779,7 @@ export function App(): JSX.Element {
           ) : (
             <div
               className="target-grid"
-              style={{ gridTemplateColumns: `100px repeat(${desktops.length}, 108px)` }}
+              style={{ gridTemplateColumns: `120px repeat(${desktops.length}, 150px)` }}
             >
               <div className="grid-corner" />
 
@@ -794,10 +879,10 @@ export function App(): JSX.Element {
                         aria-label={`${activity.name}, ${desktopTitle}, ${count} windows`}
                       >
                         <span className="cell-num">{desktop.index + 1}</span>
-                        <input
+                        <textarea
                           className="cell-title-input"
-                          type="text"
                           value={desktopTitle}
+                          rows={2}
                           title={`${activity.name} / ${desktopTitle}`}
                           aria-label={`Title for ${activity.name}, desktop ${desktop.index + 1}`}
                           onChange={(event) =>

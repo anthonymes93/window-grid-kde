@@ -18,6 +18,8 @@ const pendingRestoreRequests = [];
 const pendingRestoreWaiters = [];
 const pendingCloseAllRequests = [];
 const pendingCloseAllWaiters = [];
+const pendingWorkspaceBackRequests = [];
+const pendingWorkspaceBackWaiters = [];
 const pendingWindowCountsRequests = [];
 const pendingWindowCountsWaiters = [];
 const pendingDesktopReorderRequests = [];
@@ -25,6 +27,7 @@ const pendingDesktopReorderWaiters = [];
 const pendingGridReorderRequests = [];
 const pendingGridReorderWaiters = [];
 let requestIdCounter = 0;
+let latestWorkspaceBackState = '{"current":null,"previous":null}';
 
 const toDesktopIds = (desktopIdsCsv) =>
   desktopIdsCsv
@@ -99,6 +102,17 @@ const notifyGridReorderWaiters = () => {
     );
     if (request.onDelivered) request.onDelivered();
     waiter.resolve([request.activityIdsCsv, request.fromIndex, request.toIndex, request.requestId]);
+  }
+};
+
+const notifyWorkspaceBackWaiters = () => {
+  while (pendingWorkspaceBackRequests.length > 0 && pendingWorkspaceBackWaiters.length > 0) {
+    const request = pendingWorkspaceBackRequests.shift();
+    const waiter = pendingWorkspaceBackWaiters.shift();
+    clearTimeout(waiter.timeoutId);
+    console.log(`[Window Grid DBus Helper] DELIVERED workspace-back requestId=${request.requestId} to KWin`);
+    if (request.onDelivered) request.onDelivered();
+    waiter.resolve(request.requestId);
   }
 };
 
@@ -385,6 +399,58 @@ class WindowGridKDEInterface extends Interface {
     }
   }
 
+  TriggerWorkspaceBack() {
+    const requestId = String(++requestIdCounter);
+    console.log('[Window Grid DBus Helper] TriggerWorkspaceBack called:', { requestId });
+
+    return new Promise((resolve, reject) => {
+      const deliveryTimeoutId = setTimeout(() => {
+        const idx = pendingWorkspaceBackRequests.findIndex((request) => request.requestId === requestId);
+        if (idx >= 0) pendingWorkspaceBackRequests.splice(idx, 1);
+        console.log(`[Window Grid DBus Helper] TriggerWorkspaceBack TIMEOUT: requestId=${requestId}`);
+        reject(new Error(`Workspace Back request ${requestId} not delivered to KWin within 10s`));
+      }, 10_000);
+
+      pendingWorkspaceBackRequests.push({
+        requestId,
+        onDelivered: () => {
+          clearTimeout(deliveryTimeoutId);
+          console.log(`[Window Grid DBus Helper] TriggerWorkspaceBack DELIVERED: requestId=${requestId}`);
+          resolve(requestId);
+        }
+      });
+      notifyWorkspaceBackWaiters();
+    });
+  }
+
+  WaitForWorkspaceBackRequest() {
+    if (pendingWorkspaceBackRequests.length > 0) {
+      const request = pendingWorkspaceBackRequests.shift();
+      console.log(`[Window Grid DBus Helper] DELIVERED workspace-back requestId=${request.requestId} to KWin immediately`);
+      if (request.onDelivered) request.onDelivered();
+      return request.requestId;
+    }
+    return new Promise((resolve) => {
+      const waiter = { resolve, timeoutId: null };
+      waiter.timeoutId = setTimeout(() => {
+        const idx = pendingWorkspaceBackWaiters.indexOf(waiter);
+        if (idx >= 0) pendingWorkspaceBackWaiters.splice(idx, 1);
+        resolve('');
+      }, 8000);
+      pendingWorkspaceBackWaiters.push(waiter);
+    });
+  }
+
+  ReceiveWorkspaceBackState(jsonData) {
+    latestWorkspaceBackState = jsonData && jsonData.trim().length > 0
+      ? jsonData
+      : '{"current":null,"previous":null}';
+  }
+
+  GetWorkspaceBackState() {
+    return latestWorkspaceBackState;
+  }
+
   WaitForCloseAllRequest() {
     if (pendingCloseAllRequests.length > 0) {
       const request = pendingCloseAllRequests.shift();
@@ -642,6 +708,34 @@ const waitForCloseAllDescriptor = method({ inSignature: '', outSignature: 's' })
   descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForCloseAllRequest')
 });
 waitForCloseAllDescriptor.finisher(WindowGridKDEInterface);
+
+const triggerWorkspaceBackDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'TriggerWorkspaceBack',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'TriggerWorkspaceBack')
+});
+triggerWorkspaceBackDescriptor.finisher(WindowGridKDEInterface);
+
+const waitForWorkspaceBackDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'WaitForWorkspaceBackRequest',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'WaitForWorkspaceBackRequest')
+});
+waitForWorkspaceBackDescriptor.finisher(WindowGridKDEInterface);
+
+const receiveWorkspaceBackStateDescriptor = method({ inSignature: 's', outSignature: '' })({
+  kind: 'method',
+  key: 'ReceiveWorkspaceBackState',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'ReceiveWorkspaceBackState')
+});
+receiveWorkspaceBackStateDescriptor.finisher(WindowGridKDEInterface);
+
+const getWorkspaceBackStateDescriptor = method({ inSignature: '', outSignature: 's' })({
+  kind: 'method',
+  key: 'GetWorkspaceBackState',
+  descriptor: Object.getOwnPropertyDescriptor(WindowGridKDEInterface.prototype, 'GetWorkspaceBackState')
+});
+getWorkspaceBackStateDescriptor.finisher(WindowGridKDEInterface);
 
 const reorderDesktopContentsDescriptor = method({ inSignature: 'sss', outSignature: 's' })({
   kind: 'method',
